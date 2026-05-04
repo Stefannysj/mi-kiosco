@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <meta name="theme-color" content="#f97316" />
+  <meta name="description" content="Kiosco — Tu tienda digital en tiempo real" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Kiosco</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icons/icon-192.svg" />
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap"
+    rel="stylesheet" />
+  <!-- Styles -->
+  <link rel="stylesheet" href="css/reset.css" />
+  <link rel="stylesheet" href="css/variables.css" />
+  <link rel="stylesheet" href="css/main.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/animations.css" />
+  <link rel="stylesheet" href="css/extras.css" />
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+</head>
+
+<body class="theme-dark">
+
+  <!-- ╔══════════════════════════════╗ -->
+  <!-- ║         HEADER               ║ -->
+  <!-- ╚══════════════════════════════╝ -->
+  <header class="site-header" id="siteHeader">
+    <div class="header-inner">
+      <div class="logo-wrap" role="banner">
+        <span class="logo-icon">🛍️</span>
+        <span class="logo-text">Kiosco</span>
+      </div>
+
+      <nav class="header-nav" aria-label="Navegación principal">
+        <!-- populated by JS when admin -->
+      </nav>
+
+      <div class="header-actions">
+        <!-- Theme toggle -->
+        <button class="btn-icon theme-toggle" id="themeToggle" aria-label="Cambiar tema claro/oscuro"
+          title="Cambiar tema">
+          <span class="theme-icon">☀️</span>
+        </button>
+        <!-- Cart (mobile only) -->
+        <button class="btn-icon cart-btn mobile-only" id="cartBtnMobile" aria-label="Ver carrito de compras">
+          🛒 <span class="cart-badge" id="cartBadge">0</span>
+        </button>
+        <!-- Admin login -->
+        <button class="btn-icon" id="loginBtn" aria-label="Acceso administrador"
+          title="Acceso administrador">👤</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ╔══════════════════════════════╗ -->
+  <!-- ║       PAGE: TIENDA           ║ -->
+  <!-- ╚══════════════════════════════╝ -->
+  <main id="pageStore" class="page active" aria-label="Tienda">
+    <div class="store-layout">
+
+      <!-- Sidebar de categorías -->
+      <aside class="category-sidebar" aria-label="Categorías">
+        <p class="sidebar-title">Categorías</p>
+        <ul class="category-list" id="categoryList">
+          <!-- rendered by store.js -->
+        </ul>
+      </aside>
+
+      <!-- Productos -->
+      <section class="products-section" aria-label="Productos">
+        <div class="products-header">
+          <h1 class="section-title" id="currentCategoryTitle">Todos los productos</h1>
+          <div class="search-bar" role="search">
+            <span class="search-icon" aria-hidden="true">🔍</span>
+            <input type="search" id="searchInput" placeholder="Buscar productos…" aria-label="Buscar productos" />
+          </div>
+        </div>
+        <div class="products-grid" id="productsGrid" role="list">
+          <!-- Skeleton loading -->
+          <div id="productsLoading" class="loading-pulse"
+            style="grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:1rem">
+            <div class="pulse-card"></div>
+            <div class="pulse-card"></div>
+            <div class="pulse-card"></div>
+            <div class="pulse-card"></div>
+            <div class="pulse-card"></div>
+            <div class="pulse-card"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Carrito (solo desktop) -->
+      <aside class="cart-sidebar desktop-only" aria-label="Carrito de compras">
+        <div class="cart-header">
+          <h2>🛒 Mi Pedido</h2>
+          <button class="btn-clear" id="clearCartBtn" aria-label="Limpiar carrito">Limpiar</button>
+        </div>
+        <div class="cart-items" id="cartItems" role="list">
+          <p class="cart-empty">Tu carrito está vacío</p>
+        </div>
+        <div class="cart-footer" id="cartFooter" style="display:none">
+          <div class="cart-total">
+            <span>Total:</span>
+            <strong id="cartTotal">S/ 0.00</strong>
+          </div>
+          <input type="text" id="customerName" placeholder="Tu nombre (opcional)" class="input-field"
+            autocomplete="name" />
+          <button class="btn-primary btn-block" id="sendOrderBtn">
+            Enviar Pedido 🚀
+          </button>
+          <button class="btn-outline btn-block" id="shareWhatsappBtn">
+            Compartir por WhatsApp 💬
+          </button>
+        </div>
+      </aside>
+
+    </div><!-- /store-layout -->
+  </main>
+
+  <!-- ╔══════════════════════════════╗ -->
+  <!-- ║      PAGE: ADMINISTRADOR     ║ -->
+  <!-- ╚══════════════════════════════╝ -->
+  <main id="pageAdmin" class="page" aria-label="Panel de administración">
+    <div class="admin-layout">
+
+      <!-- Sidebar de navegación admin -->
+      <nav class="admin-sidebar" aria-label="Menú admin">
+        <ul>
+          <li><button class="admin-nav-btn active" data-section="dashboard">📊 Dashboard</button></li>
+          <li><button class="admin-nav-btn" data-section="orders">📋 Pedidos</button></li>
+          <li><button class="admin-nav-btn" data-section="products">🏷️ Productos</button></li>
+          <li><button class="admin-nav-btn" data-section="categories">📂 Categorías</button></li>
+        </ul>
+      </nav>
+
+      <!-- Contenido admin -->
+      <div class="admin-content" id="adminContent">
+
+        <!-- ── DASHBOARD ── -->
+        <section class="admin-section active" id="sectionDashboard">
+          <div class="section-header">
+            <h2>📊 Dashboard</h2>
+            <div class="period-tabs" role="tablist" aria-label="Período">
+              <button class="period-tab active" data-period="day" role="tab">Hoy</button>
+              <button class="period-tab" data-period="week" role="tab">Semana</button>
+              <button class="period-tab" data-period="month" role="tab">Mes</button>
+            </div>
+          </div>
+
+          <div class="stats-grid" id="statsGrid">
+            <div class="stat-card"><span class="stat-icon">💰</span>
+              <div class="stat-info"><span class="stat-value" id="statRevenue">S/ 0.00</span>
+                <span class="stat-label">Ingresos</span>
+              </div>
+            </div>
+            <div class="stat-card"><span class="stat-icon">📦</span>
+              <div class="stat-info"><span class="stat-value" id="statOrders">0</span>
+                <span class="stat-label">Pedidos</span>
+              </div>
+            </div>
+            <div class="stat-card"><span class="stat-icon">✅</span>
+              <div class="stat-info"><span class="stat-value" id="statDone">0</span>
+                <span class="stat-label">Completados</span>
+              </div>
+            </div>
+            <div class="stat-card"><span class="stat-icon">⏳</span>
+              <div class="stat-info"><span class="stat-value" id="statPending">0</span>
+                <span class="stat-label">Pendientes</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="chart-area">
+            <canvas id="salesChart" aria-label="Gráfico de ventas"></canvas>
+          </div>
+
+          <div class="download-bar">
+            <span>📥 Descargar reporte:</span>
+            <button class="btn-outline btn-sm" id="downloadDay">Hoy</button>
+            <button class="btn-outline btn-sm" id="downloadWeek">Semana</button>
+            <button class="btn-outline btn-sm" id="downloadMonth">Mes</button>
+          </div>
+        </section>
+
+        <!-- ── PEDIDOS ── -->
+        <section class="admin-section" id="sectionOrders">
+          <div class="section-header">
+            <h2>📋 Pedidos en tiempo real</h2>
+            <div class="order-filters" role="group" aria-label="Filtrar por estado">
+              <button class="filter-btn active" data-filter="all">Todos</button>
+              <button class="filter-btn" data-filter="pending">⏳ Pendiente</button>
+              <button class="filter-btn" data-filter="done">✅ Hecho</button>
+              <button class="filter-btn" data-filter="rejected">❌ Rechazado</button>
+            </div>
+          </div>
+          <div class="orders-list" id="ordersList" role="list">
+            <div class="empty-state">
+              <div class="empty-icon">📋</div>
+              <p>Cargando pedidos…</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── PRODUCTOS ── -->
+        <section class="admin-section" id="sectionProducts">
+          <div class="section-header">
+            <h2>🏷️ Productos</h2>
+            <button class="btn-primary" id="addProductBtn" aria-label="Agregar producto">+ Nuevo Producto</button>
+          </div>
+          <div class="admin-products-grid" id="adminProductsGrid">
+            <div class="empty-state">
+              <div class="empty-icon">📦</div>
+              <p>Cargando productos…</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── CATEGORÍAS ── -->
+        <section class="admin-section" id="sectionCategories">
+          <div class="section-header">
+            <h2>📂 Categorías</h2>
+            <button class="btn-primary" id="addCategoryBtn" aria-label="Agregar categoría">+ Nueva Categoría</button>
+          </div>
+          <div class="categories-manager" id="categoriesManager">
+            <div class="empty-state">
+              <div class="empty-icon">📂</div>
+              <p>Cargando categorías…</p>
+            </div>
+          </div>
+        </section>
+
+      </div><!-- /admin-content -->
+    </div><!-- /admin-layout -->
+  </main>
+
+
+  <!-- ╔══════════════════════════════╗ -->
+  <!-- ║          MODALES             ║ -->
+  <!-- ╚══════════════════════════════╝ -->
+
+  <!-- Login -->
+  <div class="modal-overlay" id="loginModal" role="dialog" aria-modal="true" aria-labelledby="loginModalTitle">
+    <div class="modal-box">
+      <button class="modal-close" id="closeLoginModal" aria-label="Cerrar">✕</button>
+      <h2 class="modal-title" id="loginModalTitle">Acceso Administrador</h2>
+      <p class="modal-subtitle">Ingresa tu número de teléfono registrado</p>
+
+      <div id="loginStep1">
+        <div class="phone-input-wrap">
+          <span class="phone-prefix">🇵🇪 +51</span>
+          <input type="tel" id="phoneInput" placeholder="9XX XXX XXX" maxlength="9" autocomplete="tel"
+            inputmode="numeric" aria-label="Número de teléfono" />
+        </div>
+        <button class="btn-primary btn-block" id="sendCodeBtn">Enviar código 📱</button>
+        <div id="recaptcha-container"></div>
+      </div>
+
+      <div id="loginStep2" style="display:none">
+        <p style="color:var(--text-2);font-size:.88rem;margin-bottom:1rem">
+          Código enviado a tu número</p>
+        <input type="text" id="codeInput" class="input-field" placeholder="Código de 6 dígitos" maxlength="6"
+          inputmode="numeric" autocomplete="one-time-code" aria-label="Código de verificación"
+          style="margin-bottom:1rem" />
+        <button class="btn-primary btn-block" id="verifyCodeBtn">Verificar ✅</button>
+      </div>
+
+      <p class="login-error" id="loginError" role="alert"></p>
+    </div>
+  </div>
+
+  <!-- Producto -->
+  <div class="modal-overlay" id="productModal" role="dialog" aria-modal="true" aria-labelledby="productModalTitle">
+    <div class="modal-box modal-wide">
+      <button class="modal-close" id="closeProductModal" aria-label="Cerrar">✕</button>
+      <h2 class="modal-title" id="productModalTitle">Nuevo Producto</h2>
+      <form id="productForm" class="modal-form" novalidate>
+        <input type="hidden" id="productId" />
+        <div class="form-row-2">
+          <div class="form-row">
+            <label for="productName">Nombre *</label>
+            <input type="text" id="productName" class="input-field" required placeholder="Nombre del producto"
+              autocomplete="off" />
+          </div>
+          <div class="form-row">
+            <label for="productPrice">Precio (S/) *</label>
+            <input type="number" id="productPrice" class="input-field" step="0.10" min="0" required
+              placeholder="0.00" />
+          </div>
+        </div>
+        <div class="form-row">
+          <label for="productDesc">Descripción</label>
+          <textarea id="productDesc" class="input-field" rows="2"
+            placeholder="Descripción breve del producto"></textarea>
+        </div>
+        <div class="form-row-2">
+          <div class="form-row">
+            <label for="productCategory">Categoría</label>
+            <select id="productCategory" class="input-field">
+              <option value="">Sin categoría</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label for="productSubcategory">Subcategoría</label>
+            <select id="productSubcategory" class="input-field">
+              <option value="">Sin subcategoría</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row-2">
+          <div class="form-row">
+            <label for="productStock">Stock (dejar vacío = ilimitado)</label>
+            <input type="number" id="productStock" class="input-field" min="0" placeholder="∞ Ilimitado" />
+          </div>
+          <div class="form-row">
+            <label for="productEmoji">Emoji (si no hay imagen)</label>
+            <input type="text" id="productEmoji" class="input-field" placeholder="🍕" maxlength="4" />
+          </div>
+        </div>
+        <div class="form-row">
+          <label for="productImage">URL de imagen</label>
+          <input type="url" id="productImage" class="input-field" placeholder="https://ejemplo.com/imagen.jpg"
+            autocomplete="off" />
+          <img id="productImagePreview" class="img-preview" alt="Vista previa" />
+        </div>
+        <div class="form-row">
+          <label class="toggle-label">
+            <input type="checkbox" id="productActive" checked />
+            <span>Producto activo (visible en tienda)</span>
+          </label>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn-outline" id="cancelProductBtn">Cancelar</button>
+          <button type="submit" class="btn-primary">💾 Guardar Producto</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Categoría -->
+  <div class="modal-overlay" id="categoryModal" role="dialog" aria-modal="true" aria-labelledby="categoryModalTitle">
+    <div class="modal-box">
+      <button class="modal-close" id="closeCategoryModal" aria-label="Cerrar">✕</button>
+      <h2 class="modal-title" id="categoryModalTitle">Nueva Categoría</h2>
+      <form id="categoryForm" class="modal-form" novalidate>
+        <input type="hidden" id="categoryId" />
+        <div class="form-row">
+          <label for="categoryName">Nombre *</label>
+          <input type="text" id="categoryName" class="input-field" required placeholder="Nombre de la categoría"
+            autocomplete="off" />
+        </div>
+        <div class="form-row">
+          <label for="categoryEmoji">Emoji / Ícono</label>
+          <input type="text" id="categoryEmoji" class="input-field" placeholder="🍕" maxlength="4" />
+        </div>
+        <div class="form-row">
+          <label for="categoryParent">Categoría padre (para subcategoría)</label>
+          <select id="categoryParent" class="input-field">
+            <option value="">— Es categoría principal —</option>
+          </select>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn-outline" id="cancelCategoryBtn">Cancelar</button>
+          <button type="submit" class="btn-primary">💾 Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Carrito móvil -->
+  <div class="modal-overlay" id="cartModal" role="dialog" aria-modal="true" aria-label="Carrito de compras">
+    <div class="modal-box modal-cart">
+      <button class="modal-close" id="closeCartModal" aria-label="Cerrar carrito">✕</button>
+      <h2 class="modal-title">🛒 Mi Pedido</h2>
+      <div class="cart-items" id="cartItemsMobile" role="list">
+        <p class="cart-empty">Tu carrito está vacío</p>
+      </div>
+      <div class="cart-footer" id="cartFooterMobile" style="display:none">
+        <div class="cart-total">
+          <span>Total:</span>
+          <strong id="cartTotalMobile">S/ 0.00</strong>
+        </div>
+        <input type="text" id="customerNameMobile" placeholder="Tu nombre (opcional)" class="input-field"
+          autocomplete="name" />
+        <button class="btn-primary btn-block" id="sendOrderBtnMobile">
+          Enviar Pedido 🚀
+        </button>
+        <button class="btn-outline btn-block" id="shareWhatsappBtnMobile">
+          Compartir por WhatsApp 💬
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div class="toast-container" id="toastContainer" aria-live="polite" aria-atomic="false"></div>
+
+  <!-- ── Scripts ─────────────────────────────────────────────────────────────── -->
+  <script src="js/config.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/cart.js"></script>
+  <script src="js/admin.js"></script>
+  <script src="js/dashboard.js"></script>
+  <script src="js/orders.js"></script>
+  <script src="js/notifications.js"></script>
+  <script src="js/share.js"></script>
+  <script src="js/ui-helpers.js"></script>
+  <script src="js/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator)
+      navigator.serviceWorker.register('sw.js').catch(() => { });
+  </script>
+</body>
+
+</html>

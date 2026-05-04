@@ -1,0 +1,46 @@
+/* ===== KEYFRAMES ===== */
+@keyframes fadeIn      { from{opacity:0}          to{opacity:1} }
+@keyframes fadeOut     { from{opacity:1}          to{opacity:0;pointer-events:none} }
+@keyframes scaleIn     { from{opacity:0;transform:scale(.92) translateY(14px)} to{opacity:1;transform:none} }
+@keyframes slideIn     { from{opacity:0;transform:translateX(-10px)} to{opacity:1;transform:none} }
+@keyframes slideInRight{ from{opacity:0;transform:translateX(18px)}  to{opacity:1;transform:none} }
+@keyframes slideUp     { from{opacity:0;transform:translateY(20px)}  to{opacity:1;transform:none} }
+@keyframes shimmer     { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+@keyframes pop         { 0%,100%{transform:scale(1)} 50%{transform:scale(1.18)} }
+@keyframes badgeBounce { 0%{transform:scale(1)} 40%{transform:scale(1.45)} 70%{transform:scale(.9)} 100%{transform:scale(1)} }
+@keyframes pulseGlow   { 0%,100%{box-shadow:0 0 8px var(--accent-glow)} 50%{box-shadow:0 0 24px var(--accent-glow)} }
+@keyframes float       { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+@keyframes spin        { to{transform:rotate(360deg)} }
+
+/* ===== UTILITY CLASSES ===== */
+.animate-in     { animation:slideUp .4s ease both; }
+.animate-pop    { animation:pop .3s ease; }
+.badge-animate  { animation:badgeBounce .4s ease; }
+
+/* ===== PRODUCT CARD STAGGER ===== */
+.products-grid .product-card { animation:slideUp .35s ease both; }
+.products-grid .product-card:nth-child(1) { animation-delay:.00s }
+.products-grid .product-card:nth-child(2) { animation-delay:.05s }
+.products-grid .product-card:nth-child(3) { animation-delay:.10s }
+.products-grid .product-card:nth-child(4) { animation-delay:.15s }
+.products-grid .product-card:nth-child(5) { animation-delay:.20s }
+.products-grid .product-card:nth-child(6) { animation-delay:.25s }
+.products-grid .product-card:nth-child(7) { animation-delay:.30s }
+.products-grid .product-card:nth-child(8) { animation-delay:.35s }
+.products-grid .product-card:nth-child(n+9) { animation-delay:.38s }
+
+/* ===== STAT CARD STAGGER ===== */
+.stats-grid .stat-card:nth-child(1) { animation:slideUp .4s .00s ease both }
+.stats-grid .stat-card:nth-child(2) { animation:slideUp .4s .08s ease both }
+.stats-grid .stat-card:nth-child(3) { animation:slideUp .4s .16s ease both }
+.stats-grid .stat-card:nth-child(4) { animation:slideUp .4s .24s ease both }
+
+/* ===== ORDER CARD ===== */
+.order-card { animation:slideIn .3s ease both; }
+
+/* ===== THEME TOGGLE ===== */
+.theme-toggle .theme-icon { transition:transform var(--transition); display:inline-block; }
+.theme-toggle:hover .theme-icon { transform:rotate(22deg) scale(1.1); }
+
+/* ===== LOGO PULSE on hover ===== */
+.logo-wrap:hover .logo-icon { animation:pop .35s ease; }

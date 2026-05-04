@@ -1,0 +1,32 @@
+/* ===== TOKENS ===== */
+:root {
+  --font-display: 'Syne', sans-serif;
+  --font-body: 'DM Sans', sans-serif;
+  --radius-sm: 8px; --radius-md: 14px;
+  --radius-lg: 22px; --radius-xl: 32px;
+  --shadow-sm: 0 2px 8px rgba(0,0,0,.12);
+  --shadow-md: 0 6px 24px rgba(0,0,0,.18);
+  --shadow-lg: 0 16px 48px rgba(0,0,0,.24);
+  --transition: 0.25s cubic-bezier(.4,0,.2,1);
+  --header-h: 64px;
+}
+
+/* ── DARK (default) ── */
+.theme-dark {
+  --bg:#0f0f17; --bg-2:#16161f; --bg-3:#1e1e2a; --bg-card:#1a1a26;
+  --border:rgba(255,255,255,.08);
+  --text:#f4f4f8; --text-2:#a0a0b0; --text-3:#6b6b80;
+  --accent:#f97316; --accent-2:#06b6d4; --accent-glow:rgba(249,115,22,.25);
+  --success:#22c55e; --danger:#ef4444; --warning:#eab308; --info:#06b6d4;
+  --overlay:rgba(0,0,0,.72);
+}
+
+/* ── LIGHT ── */
+.theme-light {
+  --bg:#fafaf8; --bg-2:#f2f2ee; --bg-3:#e8e8e3; --bg-card:#ffffff;
+  --border:rgba(0,0,0,.10);
+  --text:#1a1a20; --text-2:#52525e; --text-3:#9494a0;
+  --accent:#ea6a10; --accent-2:#0891b2; --accent-glow:rgba(234,106,16,.18);
+  --success:#16a34a; --danger:#dc2626; --warning:#ca8a04; --info:#0891b2;
+  --overlay:rgba(0,0,0,.5);
+}
