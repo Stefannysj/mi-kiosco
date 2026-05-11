@@ -1,0 +1,307 @@
+/* ===== css/features.css ===== */
+/* Estilos para: destacados, stock, perfil, delivery, chat, horario, caja, etc. */
+
+/* ── Productos Destacados ─────────────────────────────────────────────────── */
+.featured-section {
+  padding: 1.5rem 1.5rem 0;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+.featured-title {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 800;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+.featured-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.featured-card {
+  background: linear-gradient(135deg, var(--bg-card), var(--bg-3));
+  border: 1.5px solid var(--accent);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  position: relative;
+  transition: all var(--transition);
+  display: flex;
+  flex-direction: column;
+}
+.featured-card:hover { transform: translateY(-4px); box-shadow: 0 8px 24px var(--accent-glow); }
+.featured-badge {
+  position: absolute;
+  top: .5rem;
+  left: .5rem;
+  background: var(--accent);
+  color: #fff;
+  font-size: .7rem;
+  font-weight: 800;
+  padding: .2rem .55rem;
+  border-radius: 99px;
+  z-index: 1;
+}
+.featured-img {
+  width: 100%;
+  aspect-ratio: 1;
+  background: var(--bg-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 3rem;
+  overflow: hidden;
+}
+.featured-img img { width: 100%; height: 100%; object-fit: cover; }
+.featured-info { padding: .7rem; flex: 1; }
+.featured-name { font-weight: 700; font-size: .88rem; margin-bottom: .2rem; }
+.featured-price { color: var(--accent); font-weight: 800; font-size: .95rem; }
+.featured-add { margin: .5rem .7rem .7rem; font-size: .82rem; padding: .5rem; }
+
+/* ── Stock Alert Banner ───────────────────────────────────────────────────── */
+.stock-alert-banner {
+  background: rgba(234,179,8,.15);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-md);
+  padding: .7rem 1rem;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  flex-wrap: wrap;
+  font-size: .85rem;
+  color: var(--warning);
+}
+.stock-alert-item {
+  background: rgba(234,179,8,.2);
+  padding: .2rem .6rem;
+  border-radius: 99px;
+  font-weight: 600;
+}
+.stock-alert-banner button {
+  margin-left: auto;
+  color: var(--warning);
+  font-size: .8rem;
+  opacity: .7;
+}
+.stock-alert-banner button:hover { opacity: 1; }
+
+/* ── Historial de pedidos ─────────────────────────────────────────────────── */
+.history-item {
+  background: var(--bg-3);
+  border-radius: var(--radius-md);
+  padding: .9rem 1rem;
+  margin-bottom: .6rem;
+}
+.history-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: .85rem;
+  margin-bottom: .35rem;
+  color: var(--text-2);
+}
+.history-meta strong { color: var(--accent); }
+.history-items {
+  font-size: .82rem;
+  color: var(--text-3);
+  margin-bottom: .5rem;
+  line-height: 1.4;
+}
+
+/* ── Delivery Time Banner ─────────────────────────────────────────────────── */
+.delivery-time-banner {
+  background: var(--bg-3);
+  border-radius: var(--radius-md);
+  padding: .5rem 1rem;
+  font-size: .85rem;
+  color: var(--text-2);
+  text-align: center;
+  margin: .5rem 1.5rem;
+  border: 1px solid var(--border);
+}
+
+/* ── Closed Banner ────────────────────────────────────────────────────────── */
+.closed-banner {
+  background: rgba(239,68,68,.15);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.5rem;
+  margin: 1rem 1.5rem;
+  text-align: center;
+  color: var(--danger);
+  font-weight: 700;
+  font-size: .95rem;
+}
+
+/* ── Chat ─────────────────────────────────────────────────────────────────── */
+.chat-messages {
+  height: 300px;
+  overflow-y: auto;
+  padding: .75rem;
+  background: var(--bg-3);
+  border-radius: var(--radius-md);
+  margin-bottom: .75rem;
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  scrollbar-width: thin;
+}
+.chat-msg {
+  max-width: 75%;
+  padding: .55rem .85rem;
+  border-radius: var(--radius-md);
+  font-size: .88rem;
+  line-height: 1.4;
+}
+.chat-msg p { margin: 0; }
+.chat-time { font-size: .7rem; opacity: .6; display: block; margin-top: .2rem; }
+.chat-admin {
+  background: var(--accent);
+  color: #fff;
+  align-self: flex-end;
+  border-bottom-right-radius: 4px;
+}
+.chat-client {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  align-self: flex-start;
+  border-bottom-left-radius: 4px;
+}
+.chat-input-row {
+  display: flex;
+  gap: .5rem;
+}
+.chat-input-row input { flex: 1; }
+
+/* ── Schedule (Horario) ───────────────────────────────────────────────────── */
+.schedule-grid {
+  display: flex;
+  flex-direction: column;
+  gap: .6rem;
+}
+.schedule-row {
+  display: grid;
+  grid-template-columns: 100px 60px 1fr 1fr;
+  gap: .75rem;
+  align-items: center;
+  background: var(--bg-3);
+  border-radius: var(--radius-sm);
+  padding: .6rem .9rem;
+  font-size: .88rem;
+}
+.schedule-row label { font-weight: 600; }
+.schedule-row input[type="checkbox"] { accent-color: var(--accent); width: 18px; height: 18px; }
+.schedule-row input[type="time"] {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: .3rem .6rem;
+  color: var(--text);
+  font-size: .85rem;
+  width: 100%;
+}
+
+/* ── Cash Register ────────────────────────────────────────────────────────── */
+.cash-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  max-width: 400px;
+}
+.cash-row {
+  display: flex;
+  justify-content: space-between;
+  padding: .5rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: .9rem;
+}
+.cash-row:last-child { border-bottom: none; }
+.cash-row strong { font-weight: 700; color: var(--accent); }
+
+/* ── Branding Panel ───────────────────────────────────────────────────────── */
+.color-preview {
+  width: 100%;
+  height: 60px;
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  margin-bottom: .5rem;
+  transition: background var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+}
+.color-grid {
+  display: flex;
+  gap: .6rem;
+  flex-wrap: wrap;
+  margin-bottom: .75rem;
+}
+.color-swatch {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 3px solid transparent;
+  transition: all var(--transition);
+}
+.color-swatch.selected,
+.color-swatch:hover { border-color: var(--text); transform: scale(1.12); }
+
+/* ── Expenses ─────────────────────────────────────────────────────────────── */
+.expense-list { display: flex; flex-direction: column; gap: .5rem; margin-bottom: 1rem; }
+.expense-item {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  background: var(--bg-3);
+  border-radius: var(--radius-sm);
+  padding: .6rem .9rem;
+  font-size: .88rem;
+}
+.expense-desc { flex: 1; }
+.expense-amount { font-weight: 700; color: var(--danger); }
+.expense-date { font-size: .75rem; color: var(--text-3); }
+.expense-total {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: .75rem 1rem;
+  display: flex;
+  justify-content: space-between;
+  font-weight: 700;
+}
+.expense-total span { color: var(--danger); font-size: 1.1rem; }
+
+/* ── Lang switcher ────────────────────────────────────────────────────────── */
+#langSwitcher { font-size: 1.1rem; }
+
+/* ── Admin section: owner-only tabs ──────────────────────────────────────── */
+.owner-only { /* shown to owners, hidden to staff */ }
+
+/* ── Roles badge ──────────────────────────────────────────────────────────── */
+.role-badge {
+  font-size: .72rem;
+  font-weight: 700;
+  padding: .18rem .55rem;
+  border-radius: 99px;
+  margin-left: .5rem;
+}
+.role-badge.owner { background: var(--accent); color: #fff; }
+.role-badge.staff { background: var(--info); color: #fff; }
+
+/* ── Responsive ───────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .featured-grid { grid-template-columns: repeat(2, 1fr); }
+  .schedule-row { grid-template-columns: 80px 40px 1fr 1fr; gap: .4rem; font-size: .8rem; }
+  .chat-messages { height: 220px; }
+}
+@media (max-width: 480px) {
+  .featured-grid { grid-template-columns: repeat(2, 1fr); }
+  .schedule-row { grid-template-columns: 1fr 1fr; }
+  .schedule-row label { grid-column: 1/-1; }
+}
