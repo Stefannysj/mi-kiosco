@@ -23,6 +23,7 @@
   <link rel="stylesheet" href="css/components.css" />
   <link rel="stylesheet" href="css/animations.css" />
   <link rel="stylesheet" href="css/extras.css" />
+  <link rel="stylesheet" href="css/features.css" />
   <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
@@ -31,9 +32,8 @@
 
 <body class="theme-dark">
 
-  <!-- ╔══════════════════════════════╗ -->
   <!-- ║         HEADER               ║ -->
-  <!-- ╚══════════════════════════════╝ -->
+
   <header class="site-header" id="siteHeader">
     <div class="header-inner">
       <div class="logo-wrap" role="banner">
@@ -62,9 +62,8 @@
     </div>
   </header>
 
-  <!-- ╔══════════════════════════════╗ -->
   <!-- ║       PAGE: TIENDA           ║ -->
-  <!-- ╚══════════════════════════════╝ -->
+
   <main id="pageStore" class="page active" aria-label="Tienda">
     <div class="store-layout">
 
@@ -116,10 +115,10 @@
           <input type="text" id="customerName" placeholder="Tu nombre (opcional)" class="input-field"
             autocomplete="name" />
           <button class="btn-primary btn-block" id="sendOrderBtn">
-            Enviar Pedido 🚀
+            Enviar Pedido
           </button>
           <button class="btn-outline btn-block" id="shareWhatsappBtn">
-            Compartir por WhatsApp 💬
+            Compartir por WhatsApp
           </button>
         </div>
       </aside>
@@ -127,19 +126,31 @@
     </div><!-- /store-layout -->
   </main>
 
-  <!-- ╔══════════════════════════════╗ -->
   <!-- ║      PAGE: ADMINISTRADOR     ║ -->
-  <!-- ╚══════════════════════════════╝ -->
+
   <main id="pageAdmin" class="page" aria-label="Panel de administración">
     <div class="admin-layout">
 
       <!-- Sidebar de navegación admin -->
       <nav class="admin-sidebar" aria-label="Menú admin">
         <ul>
-          <li><button class="admin-nav-btn active" data-section="dashboard">📊 Dashboard</button></li>
-          <li><button class="admin-nav-btn" data-section="orders">📋 Pedidos</button></li>
-          <li><button class="admin-nav-btn" data-section="products">🏷️ Productos</button></li>
-          <li><button class="admin-nav-btn" data-section="categories">📂 Categorías</button></li>
+          <li>
+            <button class="admin-nav-btn" id="backToStoreBtn"
+              style="color:var(--info);margin-bottom:.5rem;border-bottom:1px solid var(--border);width:100%;text-align:left;padding-bottom:.75rem">
+              ← Volver a la tienda
+            </button>
+          </li>
+          <li><button class="admin-nav-btn active" data-section="dashboard"> Dashboard</button></li>
+          <li><button class="admin-nav-btn" data-section="orders"> Pedidos</button></li>
+          <li><button class="admin-nav-btn" data-section="products"> Productos</button></li>
+          <li><button class="admin-nav-btn" data-section="categories"> Categorías</button></li>
+          <li><button class="admin-nav-btn" data-section="cashregister"> Caja</button></li>
+          <li><button class="admin-nav-btn" data-section="schedule"> Horario</button></li>
+          <li><button class="admin-nav-btn" data-section="staff"> Personal</button></li>
+          <li><button class="admin-nav-btn" data-section="branding"> Apariencia</button></li>
+          <li style="margin-top:auto;padding-top:.75rem;border-top:1px solid var(--border)">
+            <button class="admin-nav-btn" id="logoutBtn" style="color:var(--danger)">🚪 Cerrar sesión</button>
+          </li>
         </ul>
       </nav>
 
@@ -149,7 +160,7 @@
         <!-- ── DASHBOARD ── -->
         <section class="admin-section active" id="sectionDashboard">
           <div class="section-header">
-            <h2>📊 Dashboard</h2>
+            <h2> Dashboard</h2>
             <div class="period-tabs" role="tablist" aria-label="Período">
               <button class="period-tab active" data-period="day" role="tab">Hoy</button>
               <button class="period-tab" data-period="week" role="tab">Semana</button>
@@ -185,7 +196,7 @@
           </div>
 
           <div class="download-bar">
-            <span>📥 Descargar reporte:</span>
+            <span> Descargar reporte:</span>
             <button class="btn-outline btn-sm" id="downloadDay">Hoy</button>
             <button class="btn-outline btn-sm" id="downloadWeek">Semana</button>
             <button class="btn-outline btn-sm" id="downloadMonth">Mes</button>
@@ -195,7 +206,7 @@
         <!-- ── PEDIDOS ── -->
         <section class="admin-section" id="sectionOrders">
           <div class="section-header">
-            <h2>📋 Pedidos en tiempo real</h2>
+            <h2> Pedidos en tiempo real</h2>
             <div class="order-filters" role="group" aria-label="Filtrar por estado">
               <button class="filter-btn active" data-filter="all">Todos</button>
               <button class="filter-btn" data-filter="pending">⏳ Pendiente</button>
@@ -214,7 +225,7 @@
         <!-- ── PRODUCTOS ── -->
         <section class="admin-section" id="sectionProducts">
           <div class="section-header">
-            <h2>🏷️ Productos</h2>
+            <h2> Productos</h2>
             <button class="btn-primary" id="addProductBtn" aria-label="Agregar producto">+ Nuevo Producto</button>
           </div>
           <div class="admin-products-grid" id="adminProductsGrid">
@@ -228,7 +239,7 @@
         <!-- ── CATEGORÍAS ── -->
         <section class="admin-section" id="sectionCategories">
           <div class="section-header">
-            <h2>📂 Categorías</h2>
+            <h2> Categorías</h2>
             <button class="btn-primary" id="addCategoryBtn" aria-label="Agregar categoría">+ Nueva Categoría</button>
           </div>
           <div class="categories-manager" id="categoriesManager">
@@ -239,39 +250,155 @@
           </div>
         </section>
 
+        <!-- GASTOS -->
+        <section class="admin-section owner-only" id="sectionExpenses">
+          <div class="section-header">
+            <h2> Registro de Gastos</h2>
+            <div class="period-tabs">
+              <button class="period-tab active" data-period="day">Hoy</button>
+              <button class="period-tab" data-period="week">Semana</button>
+              <button class="period-tab" data-period="month">Mes</button>
+            </div>
+          </div>
+          <div class="modal-form" style="max-width:400px;margin-bottom:1.5rem">
+            <div class="form-row-2" style="display:grid;grid-template-columns:1fr auto;gap:.75rem">
+              <input type="text" id="expenseDesc" class="input-field" placeholder="Descripción del gasto" />
+              <input type="number" id="expenseAmount" class="input-field" placeholder="S/ 0.00" step="0.50"
+                style="width:110px" />
+            </div>
+            <button class="btn-primary" id="addExpenseBtn">+ Agregar gasto</button>
+          </div>
+          <div class="expense-list" id="expenseList"></div>
+          <div class="expense-total" id="expenseTotal" style="display:none">
+            <span>Total gastos:</span><span id="expenseTotalAmount">S/ 0.00</span>
+          </div>
+          <div style="margin-top:1rem;display:flex;gap:.75rem;flex-wrap:wrap">
+            <button class="btn-outline" id="exportExpensesCSV">📥 CSV</button>
+            <button class="btn-outline" id="exportExpensesXLSX">📊 Excel</button>
+          </div>
+        </section>
+
+        <!-- CAJA -->
+        <section class="admin-section owner-only" id="sectionCashregister">
+          <div class="section-header">
+            <h2> Caja Diaria</h2>
+          </div>
+          <div id="cashRegisterContainer"></div>
+        </section>
+
+        <!-- HORARIO -->
+        <section class="admin-section owner-only" id="sectionSchedule">
+          <div class="section-header">
+            <h2> Horario de Atención</h2>
+          </div>
+          <div class="schedule-grid" id="scheduleGrid"></div>
+          <button class="btn-primary" id="saveScheduleBtn" style="margin-top:1rem">Guardar Horario</button>
+        </section>
+
+        <!-- PERSONAL / ROLES -->
+        <section class="admin-section owner-only" id="sectionStaff">
+          <div class="section-header">
+            <h2> Personal</h2>
+            <button class="btn-primary" id="addStaffBtn">+ Agregar empleado</button>
+          </div>
+          <p style="color:var(--text-2);font-size:.88rem;margin-bottom:1rem">
+            Los empleados pueden ver y gestionar pedidos, pero no pueden editar productos, categorías ni configuración.
+          </p>
+          <div id="staffList"></div>
+        </section>
+
+        <!-- APARIENCIA -->
+        <section class="admin-section owner-only" id="sectionBranding">
+          <div class="section-header">
+            <h2> Apariencia de la Tienda</h2>
+          </div>
+          <div class="modal-form" style="max-width:440px">
+            <div class="form-row">
+              <label>Nombre de la tienda</label>
+              <input type="text" id="brandStoreName" class="input-field" placeholder="Mi Kiosco" />
+            </div>
+            <div class="form-row">
+              <label>Emoji / Ícono</label>
+              <input type="text" id="brandLogoEmoji" class="input-field" placeholder="🛍️" maxlength="4" />
+            </div>
+            <div class="form-row">
+              <label>Color principal</label>
+              <div class="color-preview" id="colorPreview">Vista previa</div>
+              <div class="color-grid">
+                <div class="color-swatch selected" style="background:#f97316" data-color="#f97316" title="Naranja">
+                </div>
+                <div class="color-swatch" style="background:#ef4444" data-color="#ef4444" title="Rojo"></div>
+                <div class="color-swatch" style="background:#8b5cf6" data-color="#8b5cf6" title="Morado"></div>
+                <div class="color-swatch" style="background:#06b6d4" data-color="#06b6d4" title="Cyan"></div>
+                <div class="color-swatch" style="background:#22c55e" data-color="#22c55e" title="Verde"></div>
+                <div class="color-swatch" style="background:#ec4899" data-color="#ec4899" title="Rosa"></div>
+                <div class="color-swatch" style="background:#f59e0b" data-color="#f59e0b" title="Amarillo"></div>
+                <div class="color-swatch" style="background:#0ea5e9" data-color="#0ea5e9" title="Azul"></div>
+              </div>
+              <input type="color" id="brandColor" class="input-field" value="#f97316" style="height:44px" />
+            </div>
+            <div class="form-row">
+              <label>⏱️ Tiempo estimado de entrega (minutos)</label>
+              <input type="number" id="brandDeliveryTime" class="input-field" placeholder="30" min="0" />
+            </div>
+            <button class="btn-primary" id="saveBrandingBtn">Guardar Apariencia</button>
+          </div>
+        </section>
+
       </div><!-- /admin-content -->
     </div><!-- /admin-layout -->
   </main>
 
-
-  <!-- ╔══════════════════════════════╗ -->
-  <!-- ║          MODALES             ║ -->
-  <!-- ╚══════════════════════════════╝ -->
-
   <!-- Login -->
-  <div class="modal-overlay" id="loginModal" role="dialog" aria-modal="true" aria-labelledby="loginModalTitle">
+  <div class="modal-overlay" id="loginModal" role="dialog" aria-modal="true">
     <div class="modal-box">
       <button class="modal-close" id="closeLoginModal" aria-label="Cerrar">✕</button>
-      <h2 class="modal-title" id="loginModalTitle">Acceso Administrador</h2>
-      <p class="modal-subtitle">Ingresa tu número de teléfono registrado</p>
+      <h2 class="modal-title">🛍️ Bienvenido</h2>
 
-      <div id="loginStep1">
-        <div class="phone-input-wrap">
-          <span class="phone-prefix">🇵🇪 +51</span>
-          <input type="tel" id="phoneInput" placeholder="9XX XXX XXX" maxlength="9" autocomplete="tel"
-            inputmode="numeric" aria-label="Número de teléfono" />
-        </div>
-        <button class="btn-primary btn-block" id="sendCodeBtn">Enviar código 📱</button>
-        <div id="recaptcha-container"></div>
+      <!-- Tabs -->
+      <div class="profile-tabs" style="margin-bottom:1.25rem">
+        <button class="profile-tab" id="loginTabUser">👤 Soy cliente</button>
+        <button class="profile-tab" id="loginTabAdmin">👥 Administrador</button>
       </div>
 
-      <div id="loginStep2" style="display:none">
-        <p style="color:var(--text-2);font-size:.88rem;margin-bottom:1rem">
-          Código enviado a tu número</p>
-        <input type="text" id="codeInput" class="input-field" placeholder="Código de 6 dígitos" maxlength="6"
-          inputmode="numeric" autocomplete="one-time-code" aria-label="Código de verificación"
-          style="margin-bottom:1rem" />
-        <button class="btn-primary btn-block" id="verifyCodeBtn">Verificar ✅</button>
+      <!-- Panel Usuario -->
+      <div id="loginPanelUser">
+        <p class="modal-subtitle">Ingresa tu nombre para hacer pedidos</p>
+        <div class="modal-form">
+          <div class="form-row">
+            <label>Tu nombre *</label>
+            <input type="text" id="userNameInput" class="input-field" placeholder="Ej: Juan Pérez"
+              autocomplete="name" />
+          </div>
+          <div class="form-row">
+            <label>Teléfono (opcional)</label>
+            <div class="phone-input-wrap">
+              <span class="phone-prefix">🇵🇪 +51</span>
+              <input type="tel" id="userPhoneInput" placeholder="9XX XXX XXX" maxlength="9" inputmode="numeric" />
+            </div>
+          </div>
+          <button class="btn-primary btn-block" id="userLoginBtn">Entrar </button>
+        </div>
+      </div>
+
+      <!-- Panel Admin -->
+      <div id="loginPanelAdmin" style="display:none">
+        <p class="modal-subtitle">Solo para administradores</p>
+        <div id="loginStep1">
+          <div class="phone-input-wrap">
+            <span class="phone-prefix">🇵🇪 +51</span>
+            <input type="tel" id="phoneInput" placeholder="9XX XXX XXX" maxlength="9" autocomplete="tel"
+              inputmode="numeric" />
+          </div>
+          <button class="btn-primary btn-block" id="sendCodeBtn" style="margin-top:.75rem">Enviar código 📱</button>
+          <div id="recaptcha-container"></div>
+        </div>
+        <div id="loginStep2" style="display:none">
+          <p style="color:var(--text-2);font-size:.88rem;margin-bottom:1rem">Código enviado a tu número</p>
+          <input type="text" id="codeInput" class="input-field" placeholder="Código de 6 dígitos" maxlength="6"
+            inputmode="numeric" autocomplete="one-time-code" style="margin-bottom:1rem" />
+          <button class="btn-primary btn-block" id="verifyCodeBtn">Verificar ✅</button>
+        </div>
       </div>
 
       <p class="login-error" id="loginError" role="alert"></p>
@@ -340,7 +467,7 @@
         </div>
         <div class="form-actions">
           <button type="button" class="btn-outline" id="cancelProductBtn">Cancelar</button>
-          <button type="submit" class="btn-primary">💾 Guardar Producto</button>
+          <button type="submit" class="btn-primary"> Guardar Producto</button>
         </div>
       </form>
     </div>
@@ -370,7 +497,7 @@
         </div>
         <div class="form-actions">
           <button type="button" class="btn-outline" id="cancelCategoryBtn">Cancelar</button>
-          <button type="submit" class="btn-primary">💾 Guardar</button>
+          <button type="submit" class="btn-primary"> Guardar</button>
         </div>
       </form>
     </div>
@@ -392,10 +519,10 @@
         <input type="text" id="customerNameMobile" placeholder="Tu nombre (opcional)" class="input-field"
           autocomplete="name" />
         <button class="btn-primary btn-block" id="sendOrderBtnMobile">
-          Enviar Pedido 🚀
+          Enviar Pedido
         </button>
         <button class="btn-outline btn-block" id="shareWhatsappBtnMobile">
-          Compartir por WhatsApp 💬
+          Compartir por WhatsApp
         </button>
       </div>
     </div>
@@ -403,6 +530,63 @@
 
   <!-- Toast container -->
   <div class="toast-container" id="toastContainer" aria-live="polite" aria-atomic="false"></div>
+
+  <!-- ── Delivery time banner ──────────────────────────────────────────────── -->
+  <div class="delivery-time-banner" id="deliveryTimeBanner" style="display:none"></div>
+
+  <!-- ── Closed banner ─────────────────────────────────────────────────────── -->
+  <div class="closed-banner" id="closedBanner" style="display:none">
+    🔒 La tienda está cerrada en este momento. Vuelve pronto.
+  </div>
+
+  <!-- ── Featured section (injected before store) ─────────────────────────── -->
+
+  <!-- Modal: Historial de pedidos -->
+  <div class="modal-overlay" id="historyModal">
+    <div class="modal-box modal-wide">
+      <button class="modal-close" id="closeHistoryModal">✕</button>
+      <h2 class="modal-title">📋 Mis pedidos anteriores</h2>
+      <div id="historyList"></div>
+    </div>
+  </div>
+
+  <!-- Modal: Chat -->
+  <div class="modal-overlay" id="chatModal">
+    <div class="modal-box">
+      <button class="modal-close" onclick="Chat.close()">✕</button>
+      <h2 class="modal-title" id="chatOrderTitle">💬 Chat</h2>
+      <div class="chat-messages" id="chatMessages"></div>
+      <div class="chat-input-row">
+        <input type="text" id="chatInput" class="input-field" placeholder="Escribe un mensaje..." />
+        <button class="btn-primary" id="chatSendBtn">Enviar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Staff (agregar empleado) -->
+  <div class="modal-overlay" id="staffModal">
+    <div class="modal-box">
+      <button class="modal-close" id="closeStaffModal">✕</button>
+      <h2 class="modal-title">Agregar Empleado</h2>
+      <div class="modal-form">
+        <div class="form-row">
+          <label>Número de teléfono (+51)</label>
+          <div class="phone-input-wrap">
+            <span class="phone-prefix">🇵🇪 +51</span>
+            <input type="tel" id="staffPhone" class="input-field" placeholder="9XX XXX XXX" maxlength="9" />
+          </div>
+        </div>
+        <div class="form-row">
+          <label>Nombre (opcional)</label>
+          <input type="text" id="staffName" class="input-field" placeholder="Nombre del empleado" />
+        </div>
+        <div class="form-actions">
+          <button class="btn-outline" id="cancelStaffBtn">Cancelar</button>
+          <button class="btn-primary" id="saveStaffBtn">Guardar</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- ── Scripts ─────────────────────────────────────────────────────────────── -->
   <script src="js/config.js"></script>
@@ -416,6 +600,8 @@
   <script src="js/notifications.js"></script>
   <script src="js/share.js"></script>
   <script src="js/ui-helpers.js"></script>
+  <script src="js/features.js"></script>
+  <script src="js/invoice.js"></script>
   <script src="js/app.js"></script>
   <script src="js/featured.js"></script>
   <script src="js/profile.js"></script>
