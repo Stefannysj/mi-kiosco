@@ -24,6 +24,7 @@
   <link rel="stylesheet" href="css/animations.css" />
   <link rel="stylesheet" href="css/extras.css" />
   <link rel="stylesheet" href="css/features.css" />
+  <link rel="stylesheet" href="css/admin-sections.css" />
   <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
@@ -240,7 +241,8 @@
         <section class="admin-section" id="sectionCategories">
           <div class="section-header">
             <h2> Categorías</h2>
-            <button class="btn-primary" id="addCategoryBtn" aria-label="Agregar categoría">+ Nueva Categoría</button>
+            <button class="btn-primary" id="addCategoryBtn">+ Nueva Categoría</button>
+            <button class="btn-outline" id="addSubcategoryBtn">+ Nueva Subcategoría</button>
           </div>
           <div class="categories-manager" id="categoriesManager">
             <div class="empty-state">
@@ -356,8 +358,8 @@
       <h2 class="modal-title">🛍️ Bienvenido</h2>
 
       <!-- Tabs -->
-      <div class="profile-tabs" style="margin-bottom:1.25rem">
-        <button class="profile-tab" id="loginTabUser">👤 Soy cliente</button>
+      <div class="profile-tabs">
+        <button class="profile-tab active" id="loginTabUser">👤 Soy cliente</button>
         <button class="profile-tab" id="loginTabAdmin">👥 Administrador</button>
       </div>
 
@@ -390,7 +392,7 @@
             <input type="tel" id="phoneInput" placeholder="9XX XXX XXX" maxlength="9" autocomplete="tel"
               inputmode="numeric" />
           </div>
-          <button class="btn-primary btn-block" id="sendCodeBtn" style="margin-top:.75rem">Enviar código 📱</button>
+          <button class="btn-primary btn-block" id="sendCodeBtn" style="margin-top:.75rem">Enviar código </button>
           <div id="recaptcha-container"></div>
         </div>
         <div id="loginStep2" style="display:none">

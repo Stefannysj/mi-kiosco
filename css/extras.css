@@ -1,162 +1,169 @@
-/* extras.css — misc helpers (imported last) */
+/* ===== extras.css ===== */
+/* Chat, delivery, ETA, caja, horario, personal, apariencia, lang toggle */
 
-/* Stock badge on product card */
-.stock-badge {
-  position: absolute;
-  top: .55rem;
-  left: .55rem;
-  background: var(--danger);
-  color: #fff;
-  font-size: .65rem;
-  font-weight: 800;
-  padding: .15rem .48rem;
-  border-radius: 99px;
-  pointer-events: none;
-}
-
-.stock-badge.low {
-  background: var(--warning);
-}
-
-/* Toggle switch (admin) */
-.toggle-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: .5rem;
-  cursor: pointer;
-  user-select: none;
-  font-size: .84rem;
-  font-weight: 600;
-  color: var(--text-2);
-}
-
-.toggle-switch input[type="checkbox"] {
-  width: 36px;
-  height: 20px;
-  appearance: none;
-  background: var(--bg-3);
-  border-radius: 99px;
-  position: relative;
-  cursor: pointer;
-  transition: background var(--transition);
-}
-
-.toggle-switch input[type="checkbox"]:checked {
-  background: var(--accent);
-}
-
-.toggle-switch input[type="checkbox"]::after {
-  content: '';
-  position: absolute;
-  left: 3px;
-  top: 3px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #fff;
-  transition: left var(--transition);
-}
-
-.toggle-switch input[type="checkbox"]:checked::after {
-  left: 19px;
-}
-
-/* Drag-drop hint for categories */
-.category-item {
-  cursor: grab;
-}
-
-.category-item:active {
-  cursor: grabbing;
-  opacity: .8;
-}
-
-.category-item.drag-over {
-  border: 2px dashed var(--accent);
-}
-
-/* Connectivity status */
-.status-offline {
+/* ── Chat FAB ─────────────────────────────────────────────────────────────── */
+.chat-fab {
   position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 500;
-  background: var(--danger);
-  color: #fff;
-  text-align: center;
-  padding: .5rem;
-  font-size: .84rem;
-  font-weight: 700;
-  animation: slideUp .3s ease;
-}
-
-/* Loading spinner */
-.spinner {
-  width: 24px;
-  height: 24px;
-  border: 3px solid var(--bg-3);
-  border-top-color: var(--accent);
+  bottom: 5.5rem;
+  right: 1.25rem;
+  width: 50px;
+  height: 50px;
   border-radius: 50%;
-  animation: spin .7s linear infinite;
-}
-
-/* Divider */
-.divider {
-  height: 1px;
-  background: var(--border);
-  margin: 1rem 0;
-}
-
-/* Centered layout helper */
-.center-page {
+  background: var(--accent);
+  color: #fff;
+  font-size: 1.35rem;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: calc(100vh - var(--header-h));
-  padding: 2rem;
-  text-align: center;
-}
-
-/* ── Login dual tabs ─────────────────────────────────────────────────────── */
-.profile-tabs {
-  display: flex;
-  gap: .4rem;
-  margin-bottom: .75rem;
-}
-
-.profile-tab {
-  flex: 1;
-  padding: .5rem;
-  border-radius: var(--radius-sm);
-  font-size: .85rem;
-  font-weight: 600;
-  color: var(--text-2);
-  border: 1.5px solid var(--border);
-  background: var(--bg-3);
-  transition: all var(--transition);
+  box-shadow: var(--shadow-lg);
+  z-index: 80;
   cursor: pointer;
+  transition: all var(--transition);
+  border: none;
 }
 
-.profile-tab.active {
+.chat-fab:hover {
+  transform: scale(1.1);
+}
+
+.chat-fab .chat-unread {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: var(--danger);
+  color: #fff;
+  font-size: .62rem;
+  font-weight: 800;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 99px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-window {
+  position: fixed;
+  bottom: 8.5rem;
+  right: 1.25rem;
+  width: 320px;
+  max-height: 420px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  animation: scaleIn .25s ease;
+}
+
+.chat-window.hidden {
+  display: none;
+}
+
+.chat-win-header {
+  padding: .75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 700;
+  font-size: .9rem;
+  flex-shrink: 0;
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: .75rem;
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  min-height: 180px;
+}
+
+.chat-msg {
+  max-width: 82%;
+  padding: .48rem .72rem;
+  border-radius: var(--radius-md);
+  font-size: .83rem;
+  line-height: 1.45;
+  animation: slideIn .2s ease;
+}
+
+.chat-msg.sent {
+  align-self: flex-end;
   background: var(--accent);
   color: #fff;
-  border-color: var(--accent);
+  border-bottom-right-radius: 3px;
 }
 
-/* ── Delivery type buttons ───────────────────────────────────────────────── */
+.chat-msg.received {
+  align-self: flex-start;
+  background: var(--bg-3);
+  border-bottom-left-radius: 3px;
+}
+
+.chat-msg .msg-time {
+  font-size: .62rem;
+  opacity: .65;
+  margin-top: .15rem;
+  text-align: right;
+}
+
+.chat-input-row {
+  padding: .65rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: .45rem;
+  flex-shrink: 0;
+}
+
+.chat-input-row input {
+  flex: 1;
+}
+
+.chat-send-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: .95rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all var(--transition);
+  border: none;
+  cursor: pointer;
+}
+
+.chat-send-btn:hover {
+  filter: brightness(1.1);
+}
+
+@media (max-width: 480px) {
+  .chat-window {
+    width: calc(100vw - 1.5rem);
+    right: .75rem;
+  }
+}
+
+/* ── Delivery type buttons ────────────────────────────────────────────────── */
 .delivery-type-btn {
   flex: 1;
-  padding: .55rem .75rem;
+  padding: .55rem .65rem;
   border-radius: var(--radius-sm);
-  font-size: .83rem;
+  font-size: .82rem;
   font-weight: 600;
   color: var(--text-2);
   border: 1.5px solid var(--border);
   background: var(--bg-3);
-  transition: all var(--transition);
   cursor: pointer;
+  transition: all var(--transition);
+  text-align: center;
 }
 
 .delivery-type-btn.active {
@@ -165,38 +172,104 @@
   border-color: var(--accent);
 }
 
-/* ── Admin sidebar logout/back ───────────────────────────────────────────── */
-.admin-sidebar ul {
+.delivery-type-btn:hover:not(.active) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ── ETA badge ────────────────────────────────────────────────────────────── */
+.eta-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  background: var(--info);
+  color: #fff;
+  font-size: .73rem;
+  font-weight: 700;
+  padding: .22rem .65rem;
+  border-radius: 99px;
+}
+
+#etaBanner {
+  padding: .5rem 1.25rem;
+}
+
+/* ── Store closed banner ──────────────────────────────────────────────────── */
+.store-closed-banner {
+  background: var(--danger);
+  color: #fff;
+  text-align: center;
+  padding: .6rem 1rem;
+  font-size: .86rem;
+  font-weight: 700;
+  animation: slideDown .3s ease;
+  position: sticky;
+  top: var(--header-h);
+  z-index: 90;
+}
+
+/* ── Lang toggle ──────────────────────────────────────────────────────────── */
+.lang-toggle {
   display: flex;
-  flex-direction: column;
-  height: 100%;
+  align-items: center;
+  gap: .3rem;
+  padding: .35rem .7rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  font-size: .8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+  background: var(--bg-3);
+  color: var(--text-2);
 }
 
-.admin-sidebar ul li:last-child {
-  margin-top: auto;
+.lang-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
-/* ── Order options modal schedule ────────────────────────────────────────── */
-.order-schedule-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: .75rem;
+/* ── Scroll to top ────────────────────────────────────────────────────────── */
+.scroll-top {
+  position: fixed;
+  bottom: 5.5rem;
+  right: 1.25rem;
+  width: 38px;
+  height: 38px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 50%;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  font-size: .88rem;
+  box-shadow: var(--shadow-md);
+  z-index: 85;
+  cursor: pointer;
+  transition: all var(--transition);
+  border: none;
 }
 
-/* ── GPS location pulse ──────────────────────────────────────────────────── */
-@keyframes gps-pulse {
-
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: .4;
-  }
+.scroll-top.visible {
+  display: flex;
 }
 
-.gps-loading {
-  animation: gps-pulse 1s infinite;
-  color: var(--info);
+.scroll-top:hover {
+  transform: scale(1.1);
+}
+
+/* ── Connection status ────────────────────────────────────────────────────── */
+.offline-indicator {
+  position: fixed;
+  top: var(--header-h);
+  left: 0;
+  right: 0;
+  background: var(--warning);
+  color: #fff;
+  text-align: center;
+  padding: .4rem;
+  font-size: .8rem;
+  font-weight: 700;
+  z-index: 95;
+  animation: slideDown .3s ease;
 }

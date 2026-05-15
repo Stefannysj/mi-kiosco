@@ -1,46 +1,341 @@
-/* ===== KEYFRAMES ===== */
-@keyframes fadeIn      { from{opacity:0}          to{opacity:1} }
-@keyframes fadeOut     { from{opacity:1}          to{opacity:0;pointer-events:none} }
-@keyframes scaleIn     { from{opacity:0;transform:scale(.92) translateY(14px)} to{opacity:1;transform:none} }
-@keyframes slideIn     { from{opacity:0;transform:translateX(-10px)} to{opacity:1;transform:none} }
-@keyframes slideInRight{ from{opacity:0;transform:translateX(18px)}  to{opacity:1;transform:none} }
-@keyframes slideUp     { from{opacity:0;transform:translateY(20px)}  to{opacity:1;transform:none} }
-@keyframes shimmer     { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
-@keyframes pop         { 0%,100%{transform:scale(1)} 50%{transform:scale(1.18)} }
-@keyframes badgeBounce { 0%{transform:scale(1)} 40%{transform:scale(1.45)} 70%{transform:scale(.9)} 100%{transform:scale(1)} }
-@keyframes pulseGlow   { 0%,100%{box-shadow:0 0 8px var(--accent-glow)} 50%{box-shadow:0 0 24px var(--accent-glow)} }
-@keyframes float       { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
-@keyframes spin        { to{transform:rotate(360deg)} }
+/* ===== animations.css ===== */
 
-/* ===== UTILITY CLASSES ===== */
-.animate-in     { animation:slideUp .4s ease both; }
-.animate-pop    { animation:pop .3s ease; }
-.badge-animate  { animation:badgeBounce .4s ease; }
+/* ── Keyframes ────────────────────────────────────────────────────────────── */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
 
-/* ===== PRODUCT CARD STAGGER ===== */
-.products-grid .product-card { animation:slideUp .35s ease both; }
-.products-grid .product-card:nth-child(1) { animation-delay:.00s }
-.products-grid .product-card:nth-child(2) { animation-delay:.05s }
-.products-grid .product-card:nth-child(3) { animation-delay:.10s }
-.products-grid .product-card:nth-child(4) { animation-delay:.15s }
-.products-grid .product-card:nth-child(5) { animation-delay:.20s }
-.products-grid .product-card:nth-child(6) { animation-delay:.25s }
-.products-grid .product-card:nth-child(7) { animation-delay:.30s }
-.products-grid .product-card:nth-child(8) { animation-delay:.35s }
-.products-grid .product-card:nth-child(n+9) { animation-delay:.38s }
+    to {
+        opacity: 1;
+    }
+}
 
-/* ===== STAT CARD STAGGER ===== */
-.stats-grid .stat-card:nth-child(1) { animation:slideUp .4s .00s ease both }
-.stats-grid .stat-card:nth-child(2) { animation:slideUp .4s .08s ease both }
-.stats-grid .stat-card:nth-child(3) { animation:slideUp .4s .16s ease both }
-.stats-grid .stat-card:nth-child(4) { animation:slideUp .4s .24s ease both }
+@keyframes fadeOut {
+    from {
+        opacity: 1;
+    }
 
-/* ===== ORDER CARD ===== */
-.order-card { animation:slideIn .3s ease both; }
+    to {
+        opacity: 0;
+        pointer-events: none;
+    }
+}
 
-/* ===== THEME TOGGLE ===== */
-.theme-toggle .theme-icon { transition:transform var(--transition); display:inline-block; }
-.theme-toggle:hover .theme-icon { transform:rotate(22deg) scale(1.1); }
+@keyframes scaleIn {
+    from {
+        opacity: 0;
+        transform: scale(.93) translateY(12px);
+    }
 
-/* ===== LOGO PULSE on hover ===== */
-.logo-wrap:hover .logo-icon { animation:pop .35s ease; }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-12px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: .45;
+    }
+}
+
+@keyframes pop {
+    0% {
+        transform: scale(1);
+    }
+
+    45% {
+        transform: scale(1.2);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+@keyframes badge-bounce {
+    0% {
+        transform: scale(1);
+    }
+
+    40% {
+        transform: scale(1.45);
+    }
+
+    70% {
+        transform: scale(.9);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: 200% 0;
+    }
+
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes glow-pulse {
+
+    0%,
+    100% {
+        box-shadow: 0 0 8px var(--accent-glow);
+    }
+
+    50% {
+        box-shadow: 0 0 24px var(--accent-glow);
+    }
+}
+
+/* ── Utility animation classes ────────────────────────────────────────────── */
+.animate-in {
+    animation: slideUp .35s ease both;
+}
+
+.animate-fade {
+    animation: fadeIn .25s ease both;
+}
+
+.animate-pop {
+    animation: pop .3s ease;
+}
+
+.badge-animate {
+    animation: badge-bounce .4s ease;
+}
+
+/* ── Product card entrance stagger ───────────────────────────────────────── */
+.product-card {
+    animation: slideUp .32s ease both;
+}
+
+.product-card:nth-child(1) {
+    animation-delay: .00s;
+}
+
+.product-card:nth-child(2) {
+    animation-delay: .04s;
+}
+
+.product-card:nth-child(3) {
+    animation-delay: .08s;
+}
+
+.product-card:nth-child(4) {
+    animation-delay: .12s;
+}
+
+.product-card:nth-child(5) {
+    animation-delay: .16s;
+}
+
+.product-card:nth-child(6) {
+    animation-delay: .20s;
+}
+
+.product-card:nth-child(7) {
+    animation-delay: .24s;
+}
+
+.product-card:nth-child(8) {
+    animation-delay: .28s;
+}
+
+/* ── Stat cards ───────────────────────────────────────────────────────────── */
+.stat-card.animate-in {
+    animation: slideUp .4s ease both;
+}
+
+/* ── Order cards ──────────────────────────────────────────────────────────── */
+.order-card {
+    animation: slideIn .25s ease both;
+}
+
+/* ── Skeleton / shimmer ───────────────────────────────────────────────────── */
+.skeleton {
+    background: linear-gradient(90deg, var(--bg-3) 25%, var(--bg-2) 50%, var(--bg-3) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: var(--radius-sm);
+}
+
+/* ── Spinner ──────────────────────────────────────────────────────────────── */
+.spinner {
+    width: 20px;
+    height: 20px;
+    border: 2.5px solid var(--border-2);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+    display: inline-block;
+}
+
+/* ── Theme toggle icon ────────────────────────────────────────────────────── */
+.theme-toggle .theme-icon {
+    transition: transform var(--transition);
+    display: inline-block;
+}
+
+.theme-toggle:hover .theme-icon {
+    transform: rotate(22deg) scale(1.1);
+}
+
+/* ── PWA install banner ───────────────────────────────────────────────────── */
+.pwa-banner {
+    position: fixed;
+    bottom: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 300;
+    background: var(--bg-card);
+    border: 1px solid var(--border-2);
+    border-radius: var(--radius-lg);
+    padding: .85rem 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    box-shadow: var(--shadow-lg);
+    animation: slideUp .4s ease;
+    white-space: nowrap;
+    max-width: calc(100vw - 2rem);
+}
+
+.pwa-banner p {
+    font-size: .86rem;
+    font-weight: 600;
+}
+
+.pwa-banner .pwa-actions {
+    display: flex;
+    gap: .5rem;
+}
+
+@media (max-width: 480px) {
+    .pwa-banner {
+        flex-direction: column;
+        white-space: normal;
+        text-align: center;
+    }
+}
+
+/* ── New order alert ──────────────────────────────────────────────────────── */
+.new-order-alert {
+    position: fixed;
+    top: calc(var(--header-h) + .75rem);
+    right: 1.25rem;
+    z-index: 300;
+    background: var(--bg-card);
+    border: 2px solid var(--accent);
+    border-radius: var(--radius-lg);
+    padding: 1rem 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: .85rem;
+    box-shadow: var(--shadow-lg), 0 0 20px var(--accent-glow);
+    animation: slideInRight .35s ease, glow-pulse 1.5s ease infinite;
+    max-width: 300px;
+    cursor: pointer;
+}
+
+.new-order-alert .alert-icon {
+    font-size: 1.75rem;
+    flex-shrink: 0;
+}
+
+.new-order-alert .alert-title {
+    font-weight: 800;
+    font-size: .92rem;
+}
+
+.new-order-alert .alert-sub {
+    font-size: .78rem;
+    color: var(--text-2);
+    margin-top: .1rem;
+}
+
+.new-order-alert .alert-close {
+    position: absolute;
+    top: .5rem;
+    right: .6rem;
+    font-size: .72rem;
+    color: var(--text-3);
+    cursor: pointer;
+    background: none;
+    border: none;
+    line-height: 1;
+}
+
+@media (max-width: 480px) {
+    .new-order-alert {
+        right: .75rem;
+        left: .75rem;
+        max-width: none;
+    }
+}
