@@ -1,34 +1,26 @@
-# Kiosco App — Expo Go
+# App móvil - Expo
 
-Aplicación React Native compatible con Expo Go. Consume las mismas colecciones `products`, `orders` y `config/payments` del proyecto Firebase de la web.
+Cliente React Native para la misma tienda. Incluye búsqueda, carrito con variantes, pedidos y seguimiento por identidad Firebase.
 
-## Funcionalidad incluida
+## Preparar
 
-- Tienda con productos Firestore en tiempo real.
-- Búsqueda, carrito y control de cantidades.
-- Modal de pedido con Efectivo, Yape, Plin y Tarjeta.
-- Lectura de número/QR desde `config/payments`.
-- Creación transaccional de pedidos, validación de stock y descuento de inventario con `source: "expo"`.
-- Historial por nombre del cliente mediante `onSnapshot`.
-- Seguimiento en tiempo real: pendiente, preparación, listo, completado o rechazado.
-- Aviso FCM al administrador a través de `POST /api/notify`.
-- Perfil básico guardado localmente con AsyncStorage.
-
-## Instalación
-
-1. Copie `.env.example` como `.env` y complete la configuración web de Firebase y la URL de Vercel.
-2. Ejecute:
+No crees otro `.env`. Desde la raíz del repositorio ejecuta `npm run build`; la app recibe solo configuración pública y el núcleo compartido generado.
 
 ```bash
-npm install
-npx expo-doctor
-npx expo start
+cd kiosco-app
+npm ci
+npm run doctor
+npm start
 ```
 
-3. Instale Expo Go en el teléfono y escanee el QR mostrado por Expo. El teléfono y la computadora deben poder comunicarse por la misma red; use el modo Tunnel si la red local lo bloquea.
+Utiliza un dispositivo o emulador compatible con el SDK Expo declarado. `prestart` regenera la configuración desde el único `.env` raíz.
 
 ## Firebase
 
-La aplicación usa Firebase JS SDK porque funciona dentro de Expo Go. No use `@react-native-firebase/firestore` para esta variante: esa biblioteca requiere módulos nativos y una development build.
+Activa el proveedor Anónimo y publica las reglas revisadas. El nombre y teléfono son datos de contacto; el historial se consulta por UID, no por coincidencia de nombre. La identidad se conserva en AsyncStorage, pero no migra automáticamente entre dispositivos.
 
-Las reglas actuales deben permitir lectura pública de productos, creación pública de pedidos y lectura de pedidos según el modelo elegido. El seguimiento exclusivamente por `customer` es funcional, pero no proporciona identidad fuerte: dos personas con el mismo nombre podrían ver pedidos coincidentes. Para producción se recomienda autenticación del cliente y un `customerUid`.
+Los pedidos releen precios, ofertas y stock en una transacción y registran reservas. Las notificaciones del backend son opcionales y usan token Firebase; dejar `PUBLIC_API_URL` vacío evita depender de Vercel. Un error al guardar el comprobante después de crear el pedido se informa sin duplicar la compra.
+
+## Validación pendiente
+
+Se revisaron archivos e imports y se validó la sintaxis JSX; no se instaló ni compiló Expo en esta entrega. Ejecuta `expo-doctor`, prueba Android/iOS, selector de imágenes, compartir PDF y persistencia antes de distribuirla. Firebase Hosting no compila ni publica esta app.

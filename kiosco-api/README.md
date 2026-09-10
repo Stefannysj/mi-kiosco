@@ -1,71 +1,30 @@
-# Kiosco API — Vercel Serverless Functions
+# Backend opcional
 
-Backend Node.js para Firebase Admin, notificaciones FCM, estadísticas, mensajería opt-in y generación de boletas PDF.
+Funciones Node.js para notificaciones, estadísticas, PDF y compatibilidad con imágenes del repositorio. No es necesario para operar el flujo básico de la web en Spark y no se publica mediante `firebase deploy`.
 
-## Endpoints
-- `POST /api/media` — requiere administrador Firebase. Optimiza desde el frontend y guarda/elimina imágenes en `web/uploads/`. En local escribe al disco; en producción usa GitHub Contents API.
+## Configuración
 
-- `POST /api/notify` — recibe `{ "orderId": "..." }`, valida que el pedido sea reciente, aplica idempotencia y envía FCM a `config/admin.fcmTokens`.
-- `POST /api/whatsapp` — recibe `{ "orderId": "..." }`; solo envía si el teléfono está previamente autorizado en `CALLMEBOT_CLIENT_KEYS_JSON`.
-- `GET /api/stats?period=day|week|month` — requiere `Authorization: Bearer <Firebase ID token>`.
-- `POST /api/boleta` — requiere token Firebase y `{ "orderId": "..." }`; reserva correlativo mediante transacción.
+Usa únicamente `../.env` en desarrollo. En Vercel configura las variables privadas equivalentes en el panel del proyecto; no crees otro archivo `.env` ni subas una cuenta de servicio al repositorio. La cuenta de servicio debe pertenecer al proyecto correcto y tener solo los permisos necesarios.
 
-## Deploy en Vercel, en 3 pasos
-
-1. Suba `kiosco-api/` al repositorio y, en Vercel, seleccione **Add New → Project → Import Git Repository**. Defina `kiosco-api` como **Root Directory**.
-2. Copie las variables de `.env.example` en **Project Settings → Environment Variables**. Para `FIREBASE_SERVICE_ACCOUNT_BASE64`, descargue una cuenta de servicio desde Firebase/Google Cloud y codifique el JSON completo en Base64. Configure también `ADMIN_UIDS` con los UID autorizados. Nunca confirme el JSON ni la clave privada en Git.
-3. Presione **Deploy**. Copie la URL final, por ejemplo `https://kiosco-api.vercel.app`, y colóquela en `window.KIOSCO_UPGRADE_CONFIG.apiBaseUrl` del frontend.
-
-Cada push a la rama vinculada genera un despliegue automático. El plan Hobby tiene cuotas y está restringido por Vercel a uso personal/no comercial. Para una tienda comercial debe revisarse y contratarse un plan permitido; no debe describirse como backend productivo gratuito e ilimitado.
-
-
-## Autorización administrativa
-
-`GET /api/stats` y `POST /api/boleta` aceptan únicamente tokens Firebase cuyo UID figure en `ADMIN_UIDS` o que incluyan el custom claim `admin: true`. Un usuario autenticado sin ese permiso recibe HTTP 403.
-
-## Documentos Firestore requeridos
-
-`config/admin`:
-
-```json
-{
-  "fcmTokens": []
-}
+```bash
+npm ci
+npm run check
+npm run dev
 ```
 
-`config/billing`:
+En el proveedor, la carpeta raíz es `kiosco-api`. Tras configurar y validar el servicio, actualiza `PUBLIC_API_URL` en el `.env` raíz y ejecuta `npm run build` desde la raíz. El despliegue remoto del backend es independiente.
 
-```json
-{
-  "businessName": "Kiosco",
-  "ruc": "20123456789",
-  "address": "Lima, Perú",
-  "phone": "+51 999 999 999",
-  "series": "B001",
-  "nextNumber": 1
-}
-```
+## Rutas y acceso
 
-## CallMeBot
+| Ruta | Requisito |
+| --- | --- |
+| `POST /api/notify` | Token Firebase y propiedad del pedido; control de reintentos. |
+| `POST /api/whatsapp` | Token, pedido propio y número autorizado expresamente en configuración privada. |
+| `GET /api/stats` | Administrador reconocido. |
+| `POST /api/boleta` | Administrador; genera representación PDF y correlativo. |
+| `GET /api/boleta` | Enlace con token de recibo público habilitado. |
+| `POST /api/media` | Administrador; compatibilidad con almacenamiento local/GitHub. |
 
-CallMeBot exige que cada número active previamente su propia API key. Guarde el mapeo exclusivamente en Vercel:
+Se reconocen claims administrativos, `ADMIN_UIDS` o la configuración autorizada de `config/admin`. La autorización no depende del rol guardado por el navegador.
 
-```json
-{"51999999999":"123456"}
-```
-
-Esta integración no sustituye WhatsApp Business API y no es adecuada para mensajería comercial masiva.
-
-## Alcance tributario
-
-El PDF es una representación profesional e informativa. No genera XML UBL, firma digital, envío a SUNAT/OSE, CDR ni baja/resumen diario. Para una boleta electrónica con validez tributaria se requiere un RUC habilitado, certificado digital y un flujo autorizado por SUNAT u OSE/PSE.
-
-
-<!-- KIOSCO_REPOSITORY_MEDIA_V120 -->
-## Imágenes en el repositorio
-
-Las imágenes nuevas no usan Cloudinary ni Firebase Storage. El navegador reduce la imagen a WEBP y el endpoint administrativo la guarda en `web/uploads/productos/<id>/image.webp` o `web/uploads/branding/logo.webp`.
-
-En producción configura `KIOSCO_MEDIA_MODE=github`, `KIOSCO_GITHUB_REPOSITORY`, `KIOSCO_GITHUB_BRANCH` y `KIOSCO_GITHUB_TOKEN`. El token debe ser fine-grained, limitado al repositorio de Kiosco y con permiso **Contents: Read and write**. Nunca se coloca en `web/`.
-
-Para que cada commit de imagen se publique automáticamente en Firebase Hosting, configura una vez la integración oficial de Hosting con GitHub mediante `firebase init hosting:github`.
+No se ejecutaron aquí el servidor real, sus credenciales ni las llamadas externas. Este directorio conserva rutas opcionales, no una promesa de backend comercial gratuito. Revisa condiciones y cuotas del proveedor. Los PDF son informativos: no incorporan certificación tributaria ni envío a SUNAT.

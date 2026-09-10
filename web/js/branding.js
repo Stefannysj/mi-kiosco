@@ -1,5 +1,5 @@
 // js/branding.js — Apariencia en tiempo real
-const Branding = (() => {
+const LegacyBranding = (() => {
     const COLORS = [
         '#f97316', '#ef4444', '#a855f7', '#06b6d4',
         '#22c55e', '#ec4899', '#eab308', '#3b82f6', '#6366f1', '#14b8a6',
@@ -168,20 +168,20 @@ const Branding = (() => {
         const list = document.getElementById('auditList');
         if (!list) return;
         try {
-            const snap = await db.collection('audit_log').orderBy('createdAt', 'desc').limit(15).get();
-            const logs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            const snap = await db.collection('audit_log').get();
+            const logs = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => KioscoCore.timestamp(b.createdAt) - KioscoCore.timestamp(a.createdAt)).slice(0, 100);
             if (!logs.length) { list.innerHTML = `<p style="color:var(--text-3);font-size:.83rem">Sin cambios aún</p>`; return; }
             list.innerHTML = logs.map(l => {
                 const date = l.createdAt?.toDate ? l.createdAt.toDate().toLocaleString('es-PE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
                 const fields = (l.changedFields || []).join(', ');
                 return `<div style="padding:.55rem .75rem;background:var(--bg-3);border-radius:6px;margin-bottom:.35rem;font-size:.79rem;border-left:2px solid var(--accent)">
           <div style="display:flex;justify-content:space-between"><strong>${esc(l.action || 'Cambio')}</strong><span style="color:var(--text-3)">${date}</span></div>
-          <p style="color:var(--text-2);margin:.15rem 0">${fields}</p>
+          <p style="color:var(--text-2);margin:.15rem 0">${esc(fields)}</p>
           <p style="color:var(--text-3);font-size:.72rem">Por: ${esc(l.admin || 'admin')}</p>
         </div>`;
             }).join('');
         } catch (e) {
-            list.innerHTML = `<p style="color:var(--danger);font-size:.8rem">Error: ${e.message}</p>`;
+            list.innerHTML = `<p style="color:var(--danger);font-size:.8rem">Error: ${esc(e.message)}</p>`;
         }
     }
 

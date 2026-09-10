@@ -1,7 +1,9 @@
 // js/share.js — WhatsApp text + printable PDF receipt
 const Share = (() => {
+  const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  const linesFor = items => (Array.isArray(items) ? items : []).map(item => ({ product: { ...(item.product || item), price: Number((item.product || item).price) || 0 }, qty: Number(item.qty) || 0 }));
 
-  function openWhatsapp(items, total) {
+  function openWhatsapp(items = [], total = 0) {
     if (!items.length) { showToast('El carrito está vacío', 'error'); return; }
 
     const overlay = document.createElement('div');
@@ -25,7 +27,7 @@ const Share = (() => {
     overlay.querySelector('#_shareText').addEventListener('click', () => {
       close();
       const txt = buildText(items, total);
-      window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank');
+      window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank', 'noopener,noreferrer');
     });
 
     overlay.querySelector('#_sharePdf').addEventListener('click', () => {
@@ -35,6 +37,7 @@ const Share = (() => {
   }
 
   function buildText(items, total) {
+    items = linesFor(items); total = Number(total) || 0;
     const date  = new Date().toLocaleString('es-PE',{weekday:'long',year:'numeric',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'});
     const lines = items.map(({product:p,qty}) =>
       `  • ${p.name} ×${qty} = ${APP_CONFIG.currency} ${(p.price*qty).toFixed(2)}`
@@ -43,11 +46,12 @@ const Share = (() => {
   }
 
   function openReceipt(items, total) {
+    items = linesFor(items); total = Number(total) || 0;
     const date  = new Date().toLocaleString('es-PE',{weekday:'long',year:'numeric',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'});
-    const store = APP_CONFIG.storeName;
+    const store = esc(APP_CONFIG.storeName);
     const rows  = items.map(({product:p,qty}) =>
       `<tr>
-         <td>${p.name}</td>
+         <td>${esc(p.name)}</td>
          <td style="text-align:center">${qty}</td>
          <td style="text-align:right">${APP_CONFIG.currency} ${p.price.toFixed(2)}</td>
          <td style="text-align:right">${APP_CONFIG.currency} ${(p.price*qty).toFixed(2)}</td>
@@ -88,14 +92,14 @@ const Share = (() => {
   <script>
     function shareWa(){
       const text = encodeURIComponent(document.title + ' — ${APP_CONFIG.currency} ${total.toFixed(2)}');
-      window.open('https://wa.me/?text=' + text, '_blank');
+      window.open('https://wa.me/?text=' + text, '_blank', 'noopener,noreferrer');
     }
   <\/script>
 </body></html>`;
 
     const blob = new Blob([html], {type:'text/html;charset=utf-8'});
     const url  = URL.createObjectURL(blob);
-    const win  = window.open(url, '_blank');
+    const win  = window.open(url, '_blank', 'noopener,noreferrer');
     if (!win) {
       const a = Object.assign(document.createElement('a'),
         {href:url, download:`recibo-${Date.now()}.html`});

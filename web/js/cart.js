@@ -39,219 +39,128 @@ const Cart = (() => {
 
   function normalizeItem(item) {
     if (!item || typeof item !== 'object') return null;
-
-    const id = normalizeId(item.id ?? item.productId);
-    const name = String(item.name ?? '').trim();
+    const productId = normalizeId(item.productId || String(item.id || '').split('::')[0]);
+    const selections = Array.isArray(item.variantSelections) ? item.variantSelections.map(String) : [];
+    const id = KioscoCore.cartKey(productId, selections);
+    const name = String(item.name || '').trim();
     const stock = normalizeStock(item.stock);
-    const quantity = normalizeQty(item.qty);
-
-    if (!id || !name) return null;
-
-    return {
-      id,
-      name,
-      price: normalizePrice(item.price),
-      unit: String(item.unit || 'Unidad').trim() || 'Unidad',
-      imageUrl: item.imageUrl || item.resolvedImageUrl ? String(item.imageUrl || item.resolvedImageUrl) : null,
-      qty: stock === null ? quantity : Math.min(quantity, Math.max(stock, 1)),
-      stock
-    };
+    if (!productId || !name || stock === 0) return null;
+    return { id, productId, variantSelections: selections, name, price: normalizePrice(item.price),
+      unit: String(item.unit || 'Unidad'), imageUrl: KioscoCore.productImage(item) || null,
+      qty: Math.min(normalizeQty(item.qty), stock ?? MAX_QTY_PER_ITEM), stock };
   }
-
   function sanitizeItems(rawItems) {
     if (!Array.isArray(rawItems)) return [];
-
-    const merged = new Map();
-    rawItems.forEach(rawItem => {
-      const item = normalizeItem(rawItem);
-      if (!item || item.stock === 0) return;
-
-      const existing = merged.get(item.id);
-      if (!existing) {
-        merged.set(item.id, item);
-        return;
-      }
-
-      const limit = existing.stock === null ? MAX_QTY_PER_ITEM : existing.stock;
-      existing.qty = Math.min(existing.qty + item.qty, Math.max(limit, 1), MAX_QTY_PER_ITEM);
-      existing.name = item.name;
-      existing.price = item.price;
-      existing.unit = item.unit;
-      existing.imageUrl = item.imageUrl || existing.imageUrl;
-      if (item.stock !== null) existing.stock = item.stock;
-    });
-
+    const merged = new Map(), totals = new Map();
+    for (const raw of rawItems) {
+      const item = normalizeItem(raw);
+      if (!item) continue;
+      const used = totals.get(item.productId) || 0;
+      item.qty = Math.min(item.qty, (item.stock ?? MAX_QTY_PER_ITEM) - used, MAX_QTY_PER_ITEM - used);
+      if (item.qty <= 0) continue;
+      totals.set(item.productId, used + item.qty);
+      const old = merged.get(item.id);
+      if (old) old.qty += item.qty; else merged.set(item.id, item);
+    }
     return [...merged.values()];
   }
-
   function load() {
     try {
-      items = sanitizeItems(JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'));
-      save(false);
-    } catch (error) {
-      console.warn('No se pudo leer el carrito:', error);
-      items = [];
-      localStorage.removeItem(STORAGE_KEY);
-    }
+      const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+      let legacy = {};
+      try { legacy = JSON.parse(localStorage.getItem('kk_cart_variants') || '{}'); } catch { /* invalid legacy state */ }
+      items = sanitizeItems(Array.isArray(raw) ? raw.map(item => {
+        const previous = legacy[item.id];
+        return previous && !item.variantSelections ? { ...item, variantSelections: previous.selections || [] } : item;
+      }) : []);
+    } catch { items = []; }
   }
-
   function save(emit = true) {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-    } catch (error) {
-      console.warn('No se pudo guardar el carrito:', error);
-      notify('No se pudo guardar el carrito en este navegador', 'warning');
-    }
-
-    if (emit) {
-      window.dispatchEvent(new CustomEvent('cart:updated', {
-        detail: { count: count(), total: total(), items: getItems() }
-      }));
-    }
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); }
+    catch { notify('El navegador no permite guardar el carrito. No cierres esta pagina.', 'warning'); }
+    if (emit) window.dispatchEvent(new CustomEvent('cart:updated', { detail: { count: count(), total: total(), items: getItems() } }));
   }
-
-  function refreshStoreCards() {
-    if (window.Store && typeof window.Store.refreshCards === 'function') {
-      window.Store.refreshCards();
-    }
-  }
-
-  function persistAndRender() {
-    save();
-    render();
-    refreshStoreCards();
-  }
-
+  function refreshStoreCards() { window.Store?.refreshCards?.(); }
+  function persistAndRender() { save(); render(); refreshStoreCards(); }
   function getItem(id) {
-    const normalizedId = normalizeId(id);
-    return items.find(item => item.id === normalizedId) || null;
+    const key = normalizeId(id);
+    return items.find(item => item.id === key) || [...items].reverse().find(item => item.productId === key) || null;
   }
-
+  function productQuantity(productId) {
+    return items.filter(item => item.productId === productId).reduce((sum, item) => sum + item.qty, 0);
+  }
   function add(product, amount = 1) {
-    const normalized = normalizeItem({ ...product, qty: 1 });
-    if (!normalized) {
-      notify('No se pudo agregar el producto', 'warning');
-      return false;
-    }
-
-    const increment = Math.max(1, Math.trunc(Number(amount)) || 1);
-    const existing = getItem(normalized.id);
+    const selections = Array.isArray(product?.variantSelections) ? product.variantSelections.map(String) : [];
+    let prepared = { ...product, variantSelections: selections };
+    try {
+      if (Array.isArray(product?.variants)) {
+        prepared.price = KioscoCore.priceFor(product, selections);
+        prepared.name = `${product.name}${selections.length ? ' - ' + selections.join(' / ') : ''}`;
+      }
+    } catch (error) { notify(error.message, 'warning'); return false; }
+    const normalized = normalizeItem({ ...prepared, qty: 1 });
+    if (!normalized) { notify('El producto no esta disponible.', 'warning'); return false; }
+    const existing = items.find(item => item.id === normalized.id);
     const stock = normalizeStock(product.stock ?? existing?.stock);
-    const currentQuantity = existing?.qty || 0;
-    const limit = stock === null ? MAX_QTY_PER_ITEM : stock;
-
-    if (limit <= 0) {
-      notify('Producto agotado', 'warning');
-      return false;
-    }
-
-    if (currentQuantity >= limit) {
-      notify(`Stock máximo disponible: ${limit}`, 'warning');
-      return false;
-    }
-
-    const nextQuantity = Math.min(currentQuantity + increment, limit, MAX_QTY_PER_ITEM);
-
-    if (existing) {
-      existing.qty = nextQuantity;
-      existing.name = normalized.name;
-      existing.price = normalized.price;
-      existing.unit = normalized.unit;
-      existing.imageUrl = normalized.imageUrl || existing.imageUrl;
-      existing.stock = stock;
-    } else {
-      items.push({
-        ...normalized,
-        qty: Math.min(increment, limit, MAX_QTY_PER_ITEM),
-        stock
-      });
-    }
-
+    const used = productQuantity(normalized.productId);
+    const increment = Math.max(1, Math.trunc(Number(amount)) || 1);
+    const remaining = Math.min(stock ?? MAX_QTY_PER_ITEM, MAX_QTY_PER_ITEM) - used;
+    if (remaining <= 0) { notify('Ya agregaste todo el stock disponible.', 'warning'); return false; }
+    const added = Math.min(increment, remaining);
+    if (existing) Object.assign(existing, normalized, { qty: existing.qty + added, stock });
+    else items.push({ ...normalized, qty: added, stock });
     persistAndRender();
     return true;
   }
-
   function setQty(id, value, options = {}) {
     const item = getItem(id);
     if (!item) return false;
-
     const requested = Math.trunc(Number(value));
-    if (!Number.isFinite(requested)) {
-      render();
-      return false;
-    }
-
-    if (requested <= 0) {
-      return removeAll(id);
-    }
-
-    const limit = item.stock === null ? MAX_QTY_PER_ITEM : item.stock;
-    const nextQuantity = Math.min(requested, Math.max(limit, 1), MAX_QTY_PER_ITEM);
-
-    if (requested > limit && options.notify !== false) {
-      notify(`Stock máximo disponible: ${limit}`, 'warning');
-    }
-
-    if (item.qty === nextQuantity) {
-      render();
-      return true;
-    }
-
-    item.qty = nextQuantity;
+    if (!Number.isFinite(requested)) { render(); return false; }
+    if (requested <= 0) return removeAll(item.id);
+    const other = productQuantity(item.productId) - item.qty;
+    const limit = Math.max(0, Math.min(item.stock ?? MAX_QTY_PER_ITEM, MAX_QTY_PER_ITEM) - other);
+    if (requested > limit && options.notify !== false) notify(`Stock disponible para esta variante: ${limit}`, 'warning');
+    if (!limit) return removeAll(item.id);
+    item.qty = Math.min(requested, limit);
     persistAndRender();
     return true;
   }
-
   function remove(id, amount = 1) {
     const item = getItem(id);
     if (!item) return false;
-
-    const decrement = Math.max(1, Math.trunc(Number(amount)) || 1);
-    if (item.qty - decrement <= 0) {
-      return removeAll(id);
-    }
-
-    item.qty -= decrement;
-    persistAndRender();
-    return true;
+    return setQty(item.id, item.qty - Math.max(1, Math.trunc(Number(amount)) || 1));
   }
-
   function removeAll(id) {
-    const normalizedId = normalizeId(id);
-    const previousLength = items.length;
-    items = items.filter(item => item.id !== normalizedId);
-    if (items.length === previousLength) return false;
+    const item = getItem(id);
+    if (!item) return false;
+    items = items.filter(entry => entry.id !== item.id);
     persistAndRender();
     return true;
   }
-
   function clear(options = {}) {
-    if (!items.length) return false;
-    if (options.confirmFirst && !window.confirm('¿Deseas vaciar el carrito?')) return false;
+    if (!items.length || (options.confirmFirst && !window.confirm('Deseas vaciar el carrito?'))) return false;
     items = [];
+    try { localStorage.removeItem('kk_cart_variants'); } catch { /* private browser */ }
     persistAndRender();
     return true;
   }
-
   function qty(id) {
-    return getItem(id)?.qty || 0;
+    const key = normalizeId(id);
+    return key.includes('::') ? (items.find(item => item.id === key)?.qty || 0) : productQuantity(key);
   }
-
   function subtotal(id) {
     const item = getItem(id);
-    return item ? item.price * item.qty : 0;
+    return item ? KioscoCore.cents(item.price) * item.qty / 100 : 0;
   }
-
-  function total() {
-    return items.reduce((sum, item) => sum + item.price * item.qty, 0);
-  }
+  function total() { return items.reduce((sum, item) => sum + KioscoCore.cents(item.price) * item.qty, 0) / 100; }
 
   function count() {
     return items.reduce((sum, item) => sum + item.qty, 0);
   }
 
   function getItems() {
-    return items.map(item => ({ ...item }));
+    return items.map(item => ({ ...item, variantSelections: [...item.variantSelections] }));
   }
 
   function getCurrency() {
@@ -438,65 +347,29 @@ const Cart = (() => {
     document.getElementById('clearCartBtnMobile')?.addEventListener('click', () => clear({ confirmFirst: true }));
 
     window.addEventListener('storage', event => {
-      if (event.key !== STORAGE_KEY) return;
+      if (event.key !== STORAGE_KEY && event.key !== null) return;
       load();
       render();
+      window.dispatchEvent(new CustomEvent('cart:updated', { detail: { items: getItems(), count: count(), total: total() } }));
       refreshStoreCards();
     });
   }
 
   function syncProducts(productList) {
     if (!Array.isArray(productList) || !items.length) return;
-
-    const products = new Map(productList.map(product => [normalizeId(product.id), product]));
-    let changed = false;
-    let adjusted = false;
-
-    items = items.filter(item => {
-      const product = products.get(item.id);
-      if (!product || product.active === false) {
-        changed = true;
-        return false;
-      }
-
-      const nextStock = normalizeStock(product.stock);
-      if (nextStock === 0) {
-        changed = true;
-        adjusted = true;
-        return false;
-      }
-
-      const nextPrice = normalizePrice(product.price);
-      const nextName = String(product.name || item.name).trim();
-      const nextUnit = String(product.unit || item.unit || 'Unidad').trim();
-      const nextImageUrl = product.imageUrl || product.resolvedImageUrl || item.imageUrl || null;
-      const nextQty = nextStock === null ? item.qty : Math.min(item.qty, nextStock);
-
-      if (
-        item.stock !== nextStock ||
-        item.price !== nextPrice ||
-        item.name !== nextName ||
-        item.unit !== nextUnit ||
-        item.imageUrl !== nextImageUrl ||
-        item.qty !== nextQty
-      ) {
-        changed = true;
-      }
-      if (item.qty !== nextQty) adjusted = true;
-
-      item.stock = nextStock;
-      item.price = nextPrice;
-      item.name = nextName;
-      item.unit = nextUnit;
-      item.imageUrl = nextImageUrl;
-      item.qty = nextQty;
-      return true;
+    const products = new Map(productList.map(product => [String(product.id), product]));
+    const before = JSON.stringify(items);
+    items = items.flatMap(item => {
+      const product = products.get(item.productId);
+      if (!product || product.active === false) return [];
+      try {
+        return [{ ...item, price: KioscoCore.priceFor(product, item.variantSelections), stock: normalizeStock(product.stock),
+          name: `${product.name}${item.variantSelections.length ? ' - ' + item.variantSelections.join(' / ') : ''}`,
+          imageUrl: KioscoCore.productImage(product) || null, unit: product.unit || 'Unidad' }];
+      } catch { return []; }
     });
-
-    if (!changed) return;
-    save();
-    render();
-    if (adjusted) notify('El carrito se ajustó al stock disponible', 'warning');
+    items = sanitizeItems(items);
+    if (JSON.stringify(items) !== before) { save(); render(); }
   }
 
   function validateCheckout(customerName, deliveryType, address) {
@@ -507,101 +380,73 @@ const Cart = (() => {
     }
   }
 
-  async function checkout(
-    customerName,
-    customerPhone,
-    notes,
-    deliveryType,
-    address,
-    scheduledDate,
-    scheduledTime,
-    gpsCoords
-  ) {
+  async function checkout(customerName, customerPhone, notes, deliveryType, address, scheduledDate, scheduledTime, gpsCoords) {
     validateCheckout(customerName, deliveryType, address);
-    if (checkoutInProgress) throw new Error('El pedido ya se está procesando');
-    if (!window.db || !window.COLL) throw new Error('Firestore no está disponible');
-
+    if (!navigator.onLine) throw new Error('Sin conexion. Tu carrito sigue guardado.');
+    if (checkoutInProgress) throw new Error('El pedido ya se esta procesando.');
+    if (items.length > 100) throw new Error('El pedido admite hasta 100 lineas de productos.');
+    if (String(customerName).trim().length > 120) throw new Error('El nombre supera 120 caracteres.');
+    if (customerPhone && !/^9\d{8}$/.test(String(customerPhone).replace(/\D/g, ''))) throw new Error('Ingresa un celular peruano valido.');
     checkoutInProgress = true;
-
     try {
-      const orderReference = db.collection(COLL.orders).doc();
+      const owner = await Auth.ensureClient();
+      const blocked = await window.KioscoSystem?.isBlockedClient?.(customerPhone);
+      if (blocked) throw new Error('No se puede registrar el pedido. Comunicate con la tienda.');
       const currentItems = getItems();
-
+      const orderReference = db.collection(COLL.orders).doc();
+      const quantities = {};
+      for (const item of currentItems) quantities[item.productId] = (quantities[item.productId] || 0) + item.qty;
+      const extras = window.KioscoFinalImprovements?.getCheckoutExtras?.() || {};
       await db.runTransaction(async transaction => {
-        const productSnapshots = [];
-        for (const item of currentItems) {
-          const productReference = db.collection(COLL.products).doc(item.id);
-          const productSnapshot = await transaction.get(productReference);
-          productSnapshots.push({ item, productReference, productSnapshot });
+        const offerSnapshot = await transaction.get(db.collection(COLL.config).doc('offer'));
+        const liveOffer = offerSnapshot.exists ? offerSnapshot.data() : null;
+        const snapshots = new Map();
+        // All reads precede all writes; stock is shared across variants.
+        for (const productId of Object.keys(quantities)) {
+          const reference = db.collection(COLL.products).doc(productId);
+          snapshots.set(productId, { reference, snapshot: await transaction.get(reference) });
         }
-
-        const orderItems = [];
-        for (const entry of productSnapshots) {
-          const { item, productReference, productSnapshot } = entry;
-          if (!productSnapshot.exists) throw new Error(`El producto ${item.name} ya no existe`);
-
-          const product = productSnapshot.data() || {};
-          if (product.active === false) throw new Error(`El producto ${item.name} no está disponible`);
-
-          const currentStock = normalizeStock(product.stock);
-          if (currentStock !== null && currentStock < item.qty) {
-            throw new Error(`Stock insuficiente para ${item.name}. Disponible: ${currentStock}`);
-          }
-
-          const currentPrice = normalizePrice(product.price);
-          const unit = String(product.unit || item.unit || 'Unidad').trim();
-          orderItems.push({
-            productId: item.id,
-            name: String(product.name || item.name),
-            price: Number(currentPrice.toFixed(2)),
-            qty: item.qty,
-            unit,
-            subtotal: Number((currentPrice * item.qty).toFixed(2))
-          });
-
-          if (currentStock !== null) {
-            const nextStock = currentStock - item.qty;
-            // KIOSCO_NINE:ATOMIC_STOCK_DEACTIVATION
-            const stockUpdate = {
-              stock: nextStock,
-              updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-            };
-            if (nextStock === 0) stockUpdate.active = false;
-            transaction.update(productReference, stockUpdate);
-          }
+        const orderItems = currentItems.map(item => {
+          const { snapshot } = snapshots.get(item.productId);
+          if (!snapshot.exists) throw new Error(`El producto ${item.name} ya no existe.`);
+          const product = snapshot.data();
+          if (product.active === false) throw new Error(`El producto ${item.name} no esta disponible.`);
+          const stock = normalizeStock(product.stock);
+          if (stock !== null && stock < quantities[item.productId]) throw new Error(`Stock insuficiente para ${product.name}. Disponible: ${stock}.`);
+          const price = KioscoCore.priceFor({ ...product, id: item.productId }, item.variantSelections, liveOffer);
+          return { productId: item.productId,
+            name: `${product.name}${item.variantSelections.length ? ' - ' + item.variantSelections.join(' / ') : ''}`,
+            price, qty: item.qty, unit: product.unit || 'Unidad', variants: item.variantSelections,
+            subtotal: KioscoCore.cents(price) * item.qty / 100 };
+        });
+        for (const [productId, { reference, snapshot }] of snapshots) {
+          const stock = normalizeStock(snapshot.data().stock);
+          if (stock !== null) transaction.update(reference, { stock: stock - quantities[productId], lastOrderId: orderReference.id,
+            stockReservations: { ...(snapshot.data().stockReservations || {}), [orderReference.id]: quantities[productId] },
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
         }
-
-        const orderTotal = orderItems.reduce((sum, item) => sum + item.subtotal, 0);
         transaction.set(orderReference, {
-          customer: String(customerName).trim(),
-          customerPhone: String(customerPhone || '').trim() || null,
-          items: orderItems,
-          total: Number(orderTotal.toFixed(2)),
-          itemCount: orderItems.reduce((sum, item) => sum + item.qty, 0),
-          status: 'pending',
-          // KIOSCO_FINAL:CHECKOUT_EXTRAS
-          paymentMethod: window.KioscoFinalImprovements?.getCheckoutExtras?.().paymentMethod
-            || window.KioscoUpgrades?.getSelectedPaymentMethod?.()
-            || 'cash',
-          paymentGroup: window.KioscoFinalImprovements?.getCheckoutExtras?.().paymentGroup || null,
-          paymentProofExpected: Boolean(window.KioscoFinalImprovements?.getCheckoutExtras?.().paymentProofExpected),
-          notes: String(notes || '').trim().slice(0, 300) || null,
-          deliveryType: deliveryType || 'pickup',
-          deliveryAddress: String(address || '').trim() || null,
-          scheduledDate: scheduledDate || null,
-          scheduledTime: scheduledTime || null,
-          location: gpsCoords || null,
-          source: 'web',
-          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          ownerId: owner.uid, customer: String(customerName).trim(), customerPhone: String(customerPhone || '').trim() || null,
+          items: orderItems, productQuantities: quantities,
+          total: orderItems.reduce((sum, item) => sum + KioscoCore.cents(item.subtotal), 0) / 100,
+          itemCount: orderItems.reduce((sum, item) => sum + item.qty, 0), status: 'pending',
+          paymentMethod: extras.paymentMethod || 'cash', paymentGroup: extras.paymentGroup || 'cash',
+          paymentProofExpected: Boolean(extras.paymentProofExpected), notes: String(notes || '').trim().slice(0, 300) || null,
+          deliveryType: deliveryType === 'delivery' ? 'delivery' : 'pickup', deliveryAddress: String(address || '').trim() || null,
+          scheduledDate: scheduledDate || null, scheduledTime: scheduledTime || null, location: gpsCoords || null,
+          source: 'web', createdAt: firebase.firestore.FieldValue.serverTimestamp(), updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         });
       });
-
-      clear();
+      // Preserve additions made in another tab while the transaction was in progress.
+      load();
+      for (const purchased of currentItems) {
+        const current = items.find(item => item.id === purchased.id);
+        if (current) current.qty -= purchased.qty;
+      }
+      items = items.filter(item => item.qty > 0);
+      persistAndRender();
       return orderReference.id;
-    } finally {
-      checkoutInProgress = false;
-    }
+    } finally { checkoutInProgress = false; }
   }
 
   function init() {
@@ -621,6 +466,9 @@ const Cart = (() => {
   return {
     init,
     add,
+    addItem: add,
+    getQty: qty,
+    removeOne: remove,
     setQty,
     remove,
     removeAll,

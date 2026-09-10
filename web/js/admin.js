@@ -11,9 +11,12 @@ const Admin = (() => {
   const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
   const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
   const ALLOWED_IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif']);
-  const XLSX_CDN = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+  const XLSX_CDN = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
 
+  let uiBound = false;
   function init() {
+    if (uiBound) { subscribeAll(); return; }
+    uiBound = true;
     if (ready) return;
     ready = true;
     subscribeAll();
@@ -27,6 +30,7 @@ const Admin = (() => {
   }
 
   function subscribeAll() {
+    unsubC?.(); unsubP?.();
     unsubC = db.collection(COLL.categories).onSnapshot(snap => {
       cats = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'es'));
       renderCategories(); populateCatSelect();
@@ -754,7 +758,7 @@ const Admin = (() => {
         ['Campo', 'Regla'],
         ['imageUrl', 'Usa una URL pública y accesible por HTTP o HTTPS.'],
         ['imageUrl', 'Las URLs externas se conservan sin descargar ni re-subir a Firebase Storage.'],
-        ['Imágenes nuevas', 'Para subir archivos a Firebase Storage usa el formulario de creación/edición de producto del panel administrador.'],
+        ['Imágenes nuevas', 'Usa el formulario de productos. En Spark se comprimen; Firebase Storage solo funciona con Blaze.'],
         ['Formatos de subida', 'JPG/JPEG, PNG, WEBP o GIF; máximo 5 MB.']
       ]);
       instructions['!cols'] = [{ wch: 22 }, { wch: 95 }];
@@ -779,7 +783,7 @@ const Admin = (() => {
       const ch = subs.filter(s => s.parentId === m.id);
       return `<tr>
         <td><i class="bi bi-tag me-2"></i>${esc(m.name)}</td>
-        <td>${m.emoji || '—'}</td>
+        <td>${esc(m.emoji || '—')}</td>
         <td><span class="badge bg-info">${ch.length} subcat.</span>${ch.map(s => `<span class="badge bg-secondary ms-1">${esc(s.name)}</span>`).join('')}</td>
         <td>
           <button class="btn btn-outline-primary btn-sm me-1" onclick="Admin.editCat('${m.id}')"><i class="bi bi-pencil"></i></button>
@@ -787,7 +791,7 @@ const Admin = (() => {
         </td>
       </tr>${ch.map(s => `<tr class="table-secondary">
         <td class="ps-4"><i class="bi bi-arrow-return-right me-2 text-muted"></i>${esc(s.name)}</td>
-        <td>${s.emoji || '—'}</td><td></td>
+        <td>${esc(s.emoji || '—')}</td><td></td>
         <td>
           <button class="btn btn-outline-primary btn-sm me-1" onclick="Admin.editCat('${s.id}')"><i class="bi bi-pencil"></i></button>
           <button class="btn btn-outline-danger btn-sm" onclick="Admin.deleteCat('${s.id}')"><i class="bi bi-trash"></i></button>
@@ -815,7 +819,9 @@ const Admin = (() => {
     e.preventDefault();
     const id = document.getElementById('catId').value;
     const data = { name: document.getElementById('catName').value.trim(), emoji: document.getElementById('catEmoji').value.trim() || null, parentId: document.getElementById('catParent').value || null, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
-    if (!data.name) { showToast('Nombre requerido', 'danger'); return; }
+    if (!data.name || data.name.length > 120) return showToast('Ingresa un nombre de hasta 120 caracteres.', 'warning');
+    if (cats.some(c => c.id !== id && c.parentId === data.parentId && KioscoCore.normalize(c.name) === KioscoCore.normalize(data.name))) return showToast('Ya existe una categoria con ese nombre.', 'warning');
+    if (data.parentId && (data.parentId === id || !cats.some(c => c.id === data.parentId && !c.parentId) || cats.some(c => c.parentId === id))) return showToast('Selecciona una categoria principal valida.', 'warning');
     try {
       if (id) { await db.collection(COLL.categories).doc(id).update(data); showToast('Actualizado', 'success'); }
       else { data.createdAt = firebase.firestore.FieldValue.serverTimestamp(); await db.collection(COLL.categories).add(data); showToast((data.parentId ? 'Subcategoría' : 'Categoría') + ' creada', 'success'); }
@@ -827,8 +833,15 @@ const Admin = (() => {
   async function deleteCat(id) {
     const c = cats.find(x => x.id === id), subs = cats.filter(x => x.parentId === id);
     if (!confirm(`¿Eliminar "${c?.name}"?${subs.length ? ' También sus ' + subs.length + ' subcategorías.' : ''}`)) return;
-    const batch = db.batch(); batch.delete(db.collection(COLL.categories).doc(id)); subs.forEach(s => batch.delete(db.collection(COLL.categories).doc(s.id)));
-    try { await batch.commit(); showToast('Eliminado', 'info'); } catch (e) { showToast('Error: ' + e.message, 'danger'); }
+    try {
+      const ids = new Set([id, ...subs.map(sub => sub.id)]);
+      const snapshot = await db.collection(COLL.products).get({ source: 'server' });
+      if (snapshot.docs.some(doc => ids.has(doc.data().categoryId) || ids.has(doc.data().subcategoryId))) return showToast('Reasigna los productos antes de borrar esta categoria.', 'warning');
+      const batch = db.batch();
+      for (const categoryId of ids) batch.delete(db.collection(COLL.categories).doc(categoryId));
+      await batch.commit(); showToast('Eliminado', 'info');
+    } catch (error) { showToast('Error: ' + error.message, 'danger'); }
+
   }
 
   function populateCatSelect() {
@@ -849,40 +862,45 @@ const Admin = (() => {
   // Caja
   function renderCaja() {
     const el = document.getElementById('cajaContent'); if (!el) return;
-    const KEY = 'kk_caja_' + new Date().toISOString().slice(0, 10);
-    const state = JSON.parse(localStorage.getItem(KEY) || 'null');
+    const KEY = 'kk_caja_' + KioscoCore.limaDate().toISOString().slice(0, 10);
+    let state = null;
+    try { state = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch {}
+    if (state) { state.initial = Math.max(0, Number(state.initial) || 0); state.final = Math.max(0, Number(state.final) || 0); }
     const isOpen = state?.status === 'open';
     el.innerHTML = `
       <div class="row g-3 mb-4">
-        <div class="col-4"><div class="card text-center p-3"><div class="h5 mb-1 text-muted">Apertura</div><div class="h3 fw-bold">${APP_CONFIG.currency} ${(state?.initial || 0).toFixed(2)}</div></div></div>
-        <div class="col-4"><div class="card text-center p-3"><div class="h5 mb-1 text-muted">Ventas</div><div class="h3 fw-bold text-success" id="cajaSales">...</div></div></div>
-        <div class="col-4"><div class="card text-center p-3"><div class="h5 mb-1 text-muted">Total</div><div class="h3 fw-bold text-primary" id="cajaTotal">...</div></div></div>
+        <div class="col-12 col-sm-4"><div class="card text-center p-3"><div class="h5 mb-1 text-muted">Apertura</div><div class="h3 fw-bold">${APP_CONFIG.currency} ${(state?.initial || 0).toFixed(2)}</div></div></div>
+        <div class="col-12 col-sm-4"><div class="card text-center p-3"><div class="h5 mb-1 text-muted">Ventas</div><div class="h3 fw-bold text-success" id="cajaSales">...</div></div></div>
+        <div class="col-12 col-sm-4"><div class="card text-center p-3"><div class="h5 mb-1 text-muted">Total</div><div class="h3 fw-bold text-primary" id="cajaTotal">...</div></div></div>
       </div>
-      <div class="d-flex align-items-center gap-3 mb-4">
+      <div class="d-flex flex-wrap align-items-center gap-3 mb-4">
         <span class="badge ${isOpen ? 'bg-success' : 'bg-danger'} fs-6 px-3 py-2"><i class="bi bi-circle-fill me-2"></i>${isOpen ? 'Caja Abierta' : 'Caja Cerrada'}</span>
         ${state?.openedAt ? `<small class="text-muted">Apertura: ${new Date(state.openedAt).toLocaleTimeString('es-PE')}</small>` : ''}
       </div>
       ${isOpen ? `
         <div class="row g-2 align-items-end">
-          <div class="col-md-6"><label class="form-label">Monto final contado</label><input type="number" class="form-control" id="cajaFinal" min="0" step="0.50" placeholder="S/ 0.00"></div>
+          <div class="col-md-6"><label class="form-label">Monto final contado</label><input type="number" class="form-control" id="cajaFinal" min="0" step="0.01" placeholder="S/ 0.00"></div>
           <div class="col-md-3"><button class="btn btn-danger w-100" id="btnCerrarCaja"><i class="bi bi-lock me-2"></i>Cerrar Caja</button></div>
         </div>
         ${state?.closedAt ? `<p class="mt-3 text-muted small">Cerrada: ${new Date(state.closedAt).toLocaleString('es-PE')} — Final: ${APP_CONFIG.currency} ${(state.final || 0).toFixed(2)}</p>` : ''}` : `
         <div class="row g-2 align-items-end">
-          <div class="col-md-6"><label class="form-label">Monto de apertura</label><input type="number" class="form-control" id="cajaInicial" min="0" step="0.50" placeholder="S/ 0.00"></div>
+          <div class="col-md-6"><label class="form-label">Monto de apertura</label><input type="number" class="form-control" id="cajaInicial" min="0" step="0.01" placeholder="S/ 0.00"></div>
           <div class="col-md-3"><button class="btn btn-success w-100" id="btnAbrirCaja"><i class="bi bi-unlock me-2"></i>Abrir Caja</button></div>
         </div>`}
       <div id="cajaDayOrders" class="mt-4"></div>`;
 
     document.getElementById('btnAbrirCaja')?.addEventListener('click', () => {
-      const init = parseFloat(document.getElementById('cajaInicial')?.value) || 0;
-      localStorage.setItem(KEY, JSON.stringify({ status: 'open', openedAt: new Date().toISOString(), initial: init }));
+      const init = KioscoCore.decimal(document.getElementById('cajaInicial')?.value);
+      if (!Number.isFinite(init) || init < 0) return showToast('Ingresa un monto de apertura valido.', 'warning');
+      try { localStorage.setItem(KEY, JSON.stringify({ status: 'open', openedAt: new Date().toISOString(), initial: KioscoCore.money(init) })); }
+      catch { return showToast('No se pudo guardar la apertura en este dispositivo.', 'danger'); }
       showToast('Caja abierta', 'success'); renderCaja();
     });
     document.getElementById('btnCerrarCaja')?.addEventListener('click', () => {
-      const final = parseFloat(document.getElementById('cajaFinal')?.value) || 0;
-      const cur = JSON.parse(localStorage.getItem(KEY) || '{}');
-      localStorage.setItem(KEY, JSON.stringify({ ...cur, status: 'closed', closedAt: new Date().toISOString(), final }));
+      const final = KioscoCore.decimal(document.getElementById('cajaFinal')?.value);
+      if (!Number.isFinite(final) || final < 0) return showToast('Ingresa un monto final valido.', 'warning');
+      try { localStorage.setItem(KEY, JSON.stringify({ ...state, status: 'closed', closedAt: new Date().toISOString(), final: KioscoCore.money(final) })); }
+      catch { return showToast('No se pudo guardar el cierre en este dispositivo.', 'danger'); }
       showToast('Caja cerrada', 'info'); renderCaja();
     });
     loadCajaSales(state);
@@ -890,19 +908,17 @@ const Admin = (() => {
 
   async function loadCajaSales(state) {
     try {
-      const today = new Date(); today.setHours(0, 0, 0, 0);
-      const snap = await db.collection(COLL.orders).get();
-      const orders = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => {
-        const t = o.createdAt?.toDate?.() || new Date(0); return t >= today && o.status !== 'rejected';
-      });
-      const sales = orders.reduce((s, o) => s + (o.total || 0), 0);
-      const init = state?.initial || 0;
-      document.getElementById('cajaSales').textContent = `${APP_CONFIG.currency} ${sales.toFixed(2)}`;
-      document.getElementById('cajaTotal').textContent = `${APP_CONFIG.currency} ${(init + sales).toFixed(2)}`;
+      const snap = await db.collection(COLL.orders).get({ source: 'server' });
+      const orders = KioscoCore.filterPeriod(snap.docs.map(d => ({ id: d.id, ...d.data() })), 'day')
+        .filter(order => order.status === 'done').sort((a,b) => KioscoCore.timestamp(b.createdAt) - KioscoCore.timestamp(a.createdAt));
+      const sales = orders.reduce((sum, order) => sum + KioscoCore.cents(Number(order.total) || 0), 0) / 100;
+      const initial = Number(state?.initial) || 0;
+      const salesEl = document.getElementById('cajaSales'), totalEl = document.getElementById('cajaTotal');
+      if (salesEl) salesEl.textContent = `${APP_CONFIG.currency} ${sales.toFixed(2)}`;
+      if (totalEl) totalEl.textContent = `${APP_CONFIG.currency} ${KioscoCore.money(initial + sales).toFixed(2)}`;
       const listEl = document.getElementById('cajaDayOrders');
-      if (listEl && orders.length) {
-        listEl.innerHTML = `<h6 class="mb-3">Pedidos del día (${orders.length})</h6><div class="list-group">` + orders.slice(0, 10).map(o => `<div class="list-group-item list-group-item-action d-flex justify-content-between"><span>${o.customer || 'Cliente'}</span><strong>${APP_CONFIG.currency} ${(o.total || 0).toFixed(2)}</strong></div>`).join('') + '</div>';
-      }
+      if (listEl) listEl.innerHTML = `<h6 class="mb-3">Ventas completadas del dia (${orders.length})</h6><div class="list-group">` +
+        orders.slice(0, 10).map(order => `<div class="list-group-item d-flex flex-wrap justify-content-between gap-2"><span>${esc(order.customer || 'Cliente')}</span><strong>${APP_CONFIG.currency} ${(Number(order.total) || 0).toFixed(2)}</strong></div>`).join('') + '</div><p class="small text-muted mt-2">La apertura y el cierre se guardan en este dispositivo. Las ventas incluyen todos los medios de pago.</p>';
     } catch (e) { console.warn('caja sales:', e.message); }
   }
 
@@ -919,8 +935,8 @@ const Admin = (() => {
       <tbody>${DAYS.map((d, i) => `<tr>
         <td class="fw-semibold">${d}</td>
         <td><div class="form-check form-switch mb-0"><input class="form-check-input day-toggle" type="checkbox" id="dayOpen${i}" ${data[i].open ? 'checked' : ''}></div></td>
-        <td><input type="time" class="form-control form-control-sm day-from" id="dayFrom${i}" value="${data[i].from}" ${!data[i].open ? 'disabled' : ''}></td>
-        <td><input type="time" class="form-control form-control-sm day-to" id="dayTo${i}" value="${data[i].to}" ${!data[i].open ? 'disabled' : ''}></td>
+        <td><input type="time" class="form-control form-control-sm day-from" id="dayFrom${i}" value="${esc(data[i].from || "08:00")}" ${!data[i].open ? 'disabled' : ''}></td>
+        <td><input type="time" class="form-control form-control-sm day-to" id="dayTo${i}" value="${esc(data[i].to || "20:00")}" ${!data[i].open ? 'disabled' : ''}></td>
       </tr>`).join('')}</tbody></table></div>
       <button class="btn btn-primary mt-3" id="btnSaveSchedule"><i class="bi bi-save me-2"></i>Guardar Horario</button>`;
 
@@ -930,6 +946,7 @@ const Admin = (() => {
     }));
     document.getElementById('btnSaveSchedule')?.addEventListener('click', async () => {
       const newSch = DAYS.map((_, i) => ({ open: document.getElementById('dayOpen' + i)?.checked || false, from: document.getElementById('dayFrom' + i)?.value || '08:00', to: document.getElementById('dayTo' + i)?.value || '20:00' }));
+      if (newSch.some(day => day.open && day.from >= day.to)) return showToast('La hora de cierre debe ser posterior a la apertura.', 'warning');
       try { await db.collection(COLL.config).doc('settings').set({ schedule: newSch }, { merge: true }); showToast('Horario guardado', 'success'); }
       catch (e) { showToast('Error: ' + e.message, 'danger'); }
     });
@@ -955,6 +972,8 @@ const Admin = (() => {
 
   function openStaffModal() {
     document.getElementById('staffForm')?.reset();
+    const staffForm = document.getElementById('staffForm');
+    if (staffForm) delete staffForm.dataset.kkEditIndex;
     new bootstrap.Modal(document.getElementById('staffModal')).show();
   }
 
@@ -971,10 +990,25 @@ const Admin = (() => {
   }
 
   async function removeStaff(idx) {
-    if (!confirm('¿Eliminar?')) return;
-    staffCache.splice(idx, 1);
-    try { await db.collection(COLL.config).doc('staff').set({ members: staffCache }, { merge: true }); showToast('Eliminado', 'info'); renderStaff(); }
-    catch (e) { showToast('Error: ' + e.message, 'danger'); }
+    const member = staffCache[idx];
+    if (!member || !confirm(`Eliminar a ${member.name || member.phone}?`)) return;
+    try {
+      const ref = db.collection(COLL.config).doc('staff');
+      await db.runTransaction(async transaction => {
+        const snapshot = await transaction.get(ref);
+        const members = (snapshot.data()?.members || []).filter(item => !(member.uid ? item.uid === member.uid : item.phone === member.phone));
+        const phones = [...new Set(members.map(item => item.phone).filter(Boolean))];
+        const oldPermissions = snapshot.data()?.permissionsByPhone || {};
+        const permissionsByPhone = Object.fromEntries(phones.map(phone => [phone, oldPermissions[phone] || {}]));
+        const uids = [...new Set(members.map(item => item.uid).filter(Boolean))];
+        const permissionsByUid = Object.fromEntries(uids.map(uid => [uid, snapshot.data()?.permissionsByUid?.[uid] || {}]));
+        // Replace maps, rather than merge, so removed principals cannot retain access.
+        transaction.set(ref, { ...(snapshot.data() || {}), members, phones, permissionsByPhone, uids, permissionsByUid,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+      });
+      showToast('Personal eliminado y acceso revocado', 'info');
+      await renderStaff();
+    } catch (error) { showToast('No se pudo eliminar: ' + error.message, 'danger'); }
   }
 
   // Apariencia
@@ -1005,13 +1039,14 @@ const Admin = (() => {
       await db.collection(COLL.config).doc('theme').set(data, { merge: true });
       applyColor(data.accentColor);
       if (data.storeName) { const lt = document.querySelector('.logo-text'); if (lt) lt.textContent = data.storeName; }
-      if (data.storeLogoUrl) { const li = document.querySelector('.logo-icon'); if (li) li.innerHTML = `<img src="${data.storeLogoUrl}" style="width:32px;height:32px;border-radius:6px;object-fit:cover">`; }
+      if (data.storeLogoUrl) { const li = document.querySelector('.logo-icon'); if (li) li.innerHTML = `<img src="${esc(data.storeLogoUrl)}" style="width:32px;height:32px;border-radius:6px;object-fit:cover">`; }
       showToast('Apariencia guardada', 'success');
       document.getElementById('brandingForm')?.addEventListener('submit', saveBranding, { once: true });
     } catch (er) { showToast('Error: ' + er.message, 'danger'); }
   }
 
   function applyColor(color) {
+    if (!/^#[0-9a-f]{6}$/i.test(String(color))) return;
     const style = document.getElementById('accentStyle') || Object.assign(document.createElement('style'), { id: 'accentStyle' });
     if (!style.parentNode) document.head.appendChild(style);
     const r = parseInt(color.slice(1, 3), 16), g = parseInt(color.slice(3, 5), 16), b = parseInt(color.slice(5, 7), 16);
@@ -1024,5 +1059,17 @@ const Admin = (() => {
   function getProducts() { return prods.map(product => ({ ...product })); }
   function getCategories() { return cats.map(category => ({ ...category })); }
 
-  return { init, editProduct, deleteProduct, editCat, deleteCat, removeStaff, getProducts, getCategories };
+  function refreshProductSelects() {
+    const category = document.getElementById('productCategory')?.value || '';
+    const subcategory = document.getElementById('productSubcat')?.value || '';
+    populateCatSelect();
+    const select = document.getElementById('productCategory');
+    if (select && [...select.options].some(option => option.value === category)) select.value = category;
+    fillSubcatSelect(select?.value || '', subcategory);
+  }
+  function destroy() {
+    unsubP?.(); unsubC?.(); unsubP = null; unsubC = null; prods = []; cats = [];
+    document.getElementById('adminProductsGrid')?.replaceChildren();
+  }
+  return { init, destroy, refreshProductSelects, editProduct, deleteProduct, editCat, deleteCat, removeStaff, getProducts, getCategories };
 })();

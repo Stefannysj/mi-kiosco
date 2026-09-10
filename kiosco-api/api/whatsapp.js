@@ -1,6 +1,7 @@
 'use strict';
 
 const { getAdmin, getDb } = require('./_lib/firebaseAdmin');
+const { requireUser, assertOrderOwner } = require('./_lib/auth');
 const { applyCors, json, readJson, requireMethod, safeError } = require('./_lib/http');
 const { asDate, assertFreshOrder, normalizePhone, orderSummary } = require('./_lib/orders');
 
@@ -20,7 +21,9 @@ module.exports = async function handler(req, res) {
   if (!requireMethod(req, res, 'POST')) return;
 
   let orderRef;
+  let claimedByThisRequest = false;
   try {
+    const user = await requireUser(req);
     const { orderId } = await readJson(req);
     if (!orderId || !/^[A-Za-z0-9_-]{10,128}$/.test(String(orderId))) {
       return json(res, 400, { error: 'A valid orderId is required' });
@@ -34,6 +37,7 @@ module.exports = async function handler(req, res) {
       if (!snap.exists) throw Object.assign(new Error('Order not found'), { statusCode: 404 });
 
       const order = snap.data();
+      assertOrderOwner(user, order);
       assertFreshOrder(order);
       if (order.whatsappSentAt) return { state: 'sent', order };
 
@@ -56,6 +60,7 @@ module.exports = async function handler(req, res) {
       return { state: 'claimed', order, phone, apiKey };
     });
 
+    claimedByThisRequest = result.state === 'claimed';
     if (result.state === 'sent') return json(res, 200, { ok: true, alreadySent: true });
     if (result.state === 'processing') return json(res, 202, { ok: true, processing: true });
 
@@ -83,7 +88,7 @@ module.exports = async function handler(req, res) {
 
     return json(res, 200, { ok: true, providerResponse: text.slice(0, 160) });
   } catch (error) {
-    if (orderRef) {
+    if (orderRef && claimedByThisRequest) {
       try {
         await orderRef.update({
           whatsappClaimedAt: getAdmin().firestore.FieldValue.delete(),

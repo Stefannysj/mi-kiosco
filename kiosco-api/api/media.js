@@ -204,9 +204,10 @@ async function githubFetch(config, method, filePath, body, query = '') {
     headers: {
       Accept: 'application/vnd.github+json',
       Authorization: `Bearer ${config.token}`,
-      'X-GitHub-Api-Version': '2026-03-10',
+      'X-GitHub-Api-Version': '2022-11-28',
       'User-Agent': 'kiosco-repository-media'
     },
+    signal: AbortSignal.timeout(12000),
     body: body ? JSON.stringify(body) : undefined
   });
   const payload = await response.json().catch(() => ({}));

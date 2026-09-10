@@ -1,12 +1,13 @@
 import { Linking } from 'react-native';
+import { publicConfig } from '../config.generated';
 
 function storeBaseUrl() {
-  const value = String(process.env.EXPO_PUBLIC_KIOSCO_STORE_URL || 'https://mi-kiosco-c7313.web.app').trim().replace(/\/$/, '');
+  const value = String(publicConfig.storeUrl || 'https://mi-kiosco-c7313.web.app').trim().replace(/\/$/, '');
   return /^https?:\/\//i.test(value) ? value : 'https://mi-kiosco-c7313.web.app';
 }
 
 function apiBaseUrl() {
-  const value = String(process.env.EXPO_PUBLIC_KIOSCO_API_URL || '').trim().replace(/\/$/, '');
+  const value = String(publicConfig.apiBaseUrl || '').trim().replace(/\/$/, '');
   if (!/^https:\/\//i.test(value) || value.includes('REEMPLAZAR')) return '';
   return value;
 }

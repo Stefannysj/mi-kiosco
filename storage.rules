@@ -1,35 +1,35 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    function hasPhone() {
-      return request.auth != null && request.auth.token.phone_number != null;
+    function administrator() {
+      return request.auth != null && (
+        request.auth.token.get('admin', false) == true ||
+        request.auth.uid in firestore.get(/databases/(default)/documents/config/admin).data.get('uids', []) ||
+        request.auth.token.get('phone_number', '') in firestore.get(/databases/(default)/documents/config/admin).data.get('phones', [])
+      );
     }
-
-    function isAdmin() {
-      return hasPhone()
-        && request.auth.token.phone_number in firestore.get(/databases/(default)/documents/config/admin).data.phones;
+    function productEditor() {
+      let phone = request.auth.token.get('phone_number', '');
+      let staff = firestore.get(/databases/(default)/documents/config/staff).data;
+      let permissions = staff.get('permissionsByUid', {}).get(request.auth.uid, staff.get('permissionsByPhone', {}).get(phone, {})).get('products', {});
+      return (request.auth.uid in staff.get('uids', []) || (phone != '' && phone in staff.get('phones', []))) &&
+        (permissions.get('edit', false) == true || permissions.get('create', false) == true);
     }
-
-    function isStaff() {
-      return hasPhone()
-        && request.auth.token.phone_number in firestore.get(/databases/(default)/documents/config/staff).data.phones;
+    function productAccess() { return request.auth != null && (administrator() || productEditor()); }
+    function rasterImage() {
+      return request.resource.size > 0 && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp|gif)');
     }
-
-    function isAdminOrStaff() {
-      return isAdmin() || isStaff();
-    }
-
     match /products/{productId}/{fileName} {
       allow read: if true;
-      allow create, update: if isAdminOrStaff()
-        && request.resource.size > 0
-        && request.resource.size <= 10 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
-      allow delete: if isAdminOrStaff();
+      allow create, update: if productAccess() && rasterImage();
+      allow delete: if productAccess();
     }
-
-    match /{allPaths=**} {
-      allow read, write: if false;
+    match /logos/{fileName} {
+      allow read: if true;
+      allow create, update: if administrator() && rasterImage();
+      allow delete: if administrator();
     }
+    match /{path=**} { allow read, write: if false; }
   }
 }

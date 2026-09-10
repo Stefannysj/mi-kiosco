@@ -100,6 +100,7 @@ const Orders = (() => {
   function toDate(value) {
     if (!value) return new Date(0);
     if (typeof value.toDate === 'function') return value.toDate();
+    if (Number.isFinite(value.seconds)) return new Date(value.seconds * 1000);
     const date = value instanceof Date ? value : new Date(value);
     return Number.isNaN(date.getTime()) ? new Date(0) : date;
   }
@@ -222,33 +223,94 @@ const Orders = (() => {
     return window.APP_CONFIG?.currency || 'S/';
   }
 
-  async function setStatus(id, status) {
-    try {
-      await db.collection(COLL.orders).doc(id).update({
-        status,
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
-      const messages = {
-        pending: 'Marcado como pendiente',
-        done: 'Pedido completado',
-        rejected: 'Pedido rechazado'
-      };
-      showToast(messages[status] || 'Pedido actualizado', status === 'done' ? 'success' : 'info');
-    } catch (error) {
-      showToast(`No se pudo actualizar el pedido: ${error.message}`, 'danger');
+  const mutationLocks = new Set();
+  async function inventoryPlan(transaction, orderId, order, status) {
+    const quantities = order.productQuantities || {};
+    const committed = {};
+    const updates = [];
+    let legacy = false;
+    for (const [productId, rawQty] of Object.entries(quantities)) {
+      const qty = Number(rawQty);
+      if (!Number.isSafeInteger(qty) || qty < 1 || qty > 999) throw new Error('Cantidad de pedido invalida. Revisa el inventario.');
+      const ref = db.collection(COLL.products).doc(productId);
+      const snapshot = await transaction.get(ref);
+      if (!snapshot.exists) { legacy = true; continue; }
+      const product = snapshot.data();
+      if (product.stock == null || product.stock === '') continue;
+      const stock = Number(product.stock);
+      if (!Number.isSafeInteger(stock) || stock < 0) throw new Error('El stock del producto no es valido.');
+      const reservations = { ...(product.stockReservations || {}) };
+      const reserved = Number(reservations[orderId] || 0);
+      const consumed = Number(order.inventoryCommitted?.[productId] || 0);
+      const verifiedQty = reserved || consumed;
+      let nextStock = stock;
+      delete reservations[orderId];
+      if (status === 'rejected') {
+        if (verifiedQty > 0) nextStock += verifiedQty;
+        else if (order.status !== 'rejected') legacy = true;
+      } else if (order.status === 'rejected') {
+        if (product.active === false || stock < qty) throw new Error(`Stock insuficiente para reabrir ${product.name}.`);
+        nextStock -= qty;
+        if (status === 'pending') reservations[orderId] = qty;
+        else committed[productId] = qty;
+      } else if (status === 'done') {
+        if (verifiedQty > 0) committed[productId] = verifiedQty;
+        else legacy = true;
+      } else if (verifiedQty > 0) reservations[orderId] = verifiedQty;
+      if (nextStock !== stock || JSON.stringify(reservations) !== JSON.stringify(product.stockReservations || {})) {
+        updates.push({ ref, data: { stock: nextStock, stockReservations: reservations, lastOrderId: orderId,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp() } });
+      }
     }
+    return { updates, committed, legacy };
   }
-
+  function publicProjection(id, order) {
+    return { orderId: id, status: order.status, billing: order.billing, total: Number(order.total || 0),
+      paymentMethod: String(order.paymentMethod || ''), createdAt: order.createdAt,
+      items: (order.items || []).map(item => ({ name: String(item.name || ''), qty: Number(item.qty || 0),
+        price: Number(item.price || 0), subtotal: Number(item.subtotal || 0), unit: String(item.unit || 'Unidad') })) };
+  }
+  async function setStatus(id, status) {
+    if (!['pending', 'done', 'rejected'].includes(status) || mutationLocks.has(id)) return;
+    mutationLocks.add(id);
+    try {
+      const legacy = await db.runTransaction(async transaction => {
+        const ref = db.collection(COLL.orders).doc(id);
+        const snapshot = await transaction.get(ref);
+        if (!snapshot.exists) throw new Error('El pedido ya no existe.');
+        const order = snapshot.data();
+        if (order.status === status) return false;
+        const plan = await inventoryPlan(transaction, id, order, status);
+        // All transaction reads above, all writes below.
+        for (const item of plan.updates) transaction.update(item.ref, item.data);
+        const changes = { status, inventoryCommitted: plan.committed, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
+        transaction.update(ref, changes);
+        if (order.billing?.publicToken) transaction.set(db.collection('public_receipts').doc(order.billing.publicToken), publicProjection(id, { ...order, ...changes }));
+        return plan.legacy;
+      });
+      showToast(legacy ? 'Pedido actualizado. Es anterior al control de reservas: revisa su stock manualmente.' : 'Pedido y stock actualizados', legacy ? 'warning' : 'success');
+    } catch (error) { showToast(`No se pudo actualizar el pedido: ${error.message}`, 'danger'); }
+    finally { mutationLocks.delete(id); }
+  }
   async function del(id) {
     const order = allOrders.find(item => item.id === id);
-    if (!window.confirm(`¿Eliminar pedido de "${order?.customer || 'cliente'}"?`)) return;
-
+    if (mutationLocks.has(id) || !window.confirm(`Eliminar pedido de "${order?.customer || 'cliente'}" y sus archivos de pago? Una venta completada no devolvera stock; rechazala primero para anularla.`)) return;
+    mutationLocks.add(id);
     try {
-      await db.collection(COLL.orders).doc(id).delete();
-      showToast('Pedido eliminado', 'info');
-    } catch (error) {
-      showToast(`No se pudo eliminar el pedido: ${error.message}`, 'danger');
-    }
+      await db.runTransaction(async transaction => {
+        const ref = db.collection(COLL.orders).doc(id);
+        const snapshot = await transaction.get(ref);
+        if (!snapshot.exists) return;
+        const fresh = snapshot.data();
+        const plan = fresh.status === 'pending' ? await inventoryPlan(transaction, id, fresh, 'rejected') : { updates: [] };
+        for (const item of plan.updates) transaction.update(item.ref, item.data);
+        transaction.delete(db.collection('paymentProofs').doc(id));
+        if (fresh.billing?.publicToken) transaction.delete(db.collection('public_receipts').doc(fresh.billing.publicToken));
+        transaction.delete(ref);
+      });
+      showToast('Pedido y archivos asociados eliminados', 'info');
+    } catch (error) { showToast(`No se pudo eliminar el pedido: ${error.message}`, 'danger'); }
+    finally { mutationLocks.delete(id); }
   }
 
   function invoice(id) {
@@ -295,11 +357,12 @@ const Orders = (() => {
         </body>
       </html>`;
 
-    const printWindow = window.open('', '_blank', 'noopener,noreferrer');
+    const printWindow = window.open('', '_blank');
     if (!printWindow) {
       showToast('El navegador bloqueó la ventana de impresión', 'warning');
       return;
     }
+    printWindow.opener = null;
     printWindow.document.write(html);
     printWindow.document.close();
   }
@@ -313,8 +376,10 @@ const Orders = (() => {
       .replace(/'/g, '&#039;');
   }
 
+  function destroy() { unsubscribe?.(); unsubscribe = null; clearInterval(refreshTimer); allOrders = []; initialized = false; renderCurrent(); }
+
   return {
-    init,
+    init, destroy,
     refresh,
     setStatus,
     del,

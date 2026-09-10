@@ -68,20 +68,16 @@ const Chat = (() => {
   let isOpen      = false;
   let unreadCount = 0;
 
-  function getSessionId() {
-    if (!sessionId) {
-      sessionId = localStorage.getItem('kiosco_chat_session');
-      if (!sessionId) {
-        sessionId = 'chat_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
-        localStorage.setItem('kiosco_chat_session', sessionId);
-      }
-    }
+  async function getSessionId() {
+    const user = await Auth.ensureClient();
+    sessionId = user.uid;
     return sessionId;
   }
 
   function init() {
     const fab = document.getElementById('chatFab');
     if (fab) fab.addEventListener('click', toggle);
+    window.addEventListener('auth:logout', close);
     document.getElementById('chatClose')?.addEventListener('click', close);
     document.getElementById('chatSendBtn')?.addEventListener('click', send);
     document.getElementById('chatMsgInput')?.addEventListener('keydown', e => {
@@ -91,10 +87,10 @@ const Chat = (() => {
 
   function toggle() { isOpen ? close() : open(); }
 
-  function open() {
+  async function open() {
     isOpen = true; unreadCount = 0; updateBadge();
     document.getElementById('chatWindow')?.classList.remove('hidden');
-    subscribe(getSessionId());
+    try { subscribe(await getSessionId()); } catch (error) { close(); showToast(error.message, 'danger'); }
     setTimeout(() => document.getElementById('chatMsgInput')?.focus(), 100);
   }
 
@@ -107,14 +103,14 @@ const Chat = (() => {
   function subscribe(sid) {
     if (unsubChat) unsubChat();
     unsubChat = db.collection('chats').doc(sid).collection('messages')
-      .orderBy('createdAt', 'asc').limit(100)
+      
       .onSnapshot(snap => {
-        render(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        render(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => KioscoCore.timestamp(a.createdAt) - KioscoCore.timestamp(b.createdAt)));
         if (!isOpen) {
           const newMsgs = snap.docChanges().filter(c => c.type === 'added' && c.doc.data().sender !== 'customer');
           if (newMsgs.length) { unreadCount += newMsgs.length; updateBadge(); }
         }
-      });
+      }, () => { close(); showToast('No se pudo abrir el chat.', 'warning'); });
   }
 
   function render(messages) {
@@ -138,19 +134,20 @@ const Chat = (() => {
     if (!input) return;
     const text = input.value.trim();
     if (!text) return;
+    if (text.length > 2000) return showToast('El mensaje admite hasta 2000 caracteres.', 'warning');
     input.value = '';
     try {
-      const sid = getSessionId();
+      const sid = await getSessionId();
       await db.collection('chats').doc(sid).collection('messages').add({
         text, sender: 'customer',
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
       await db.collection('chats').doc(sid).set({
-        lastMessage: text, lastSender: 'customer',
+        ownerId: sid, lastMessage: text, lastSender: 'customer',
         updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
         unreadAdmin: true
       }, { merge: true });
-    } catch (e) { showToast('Error al enviar', 'error'); }
+    } catch (e) { input.value = text; showToast('No se pudo enviar el mensaje. Intenta nuevamente.', 'danger'); }
   }
 
   function updateBadge() {
@@ -175,14 +172,16 @@ const CustomerProfile = (() => {
   function init() {
     document.getElementById('profileBtn')?.addEventListener('click', openModal_);
     document.getElementById('historyModal')?.addEventListener('click', e => {
-      if (e.target.id === 'historyModal') closeModal(document.getElementById('historyModal'));
+      if (e.target.id === 'historyModal') bootstrap.Modal.getInstance(document.getElementById('historyModal'))?.hide();
     });
     document.getElementById('closeHistoryModal')?.addEventListener('click', () =>
-      closeModal(document.getElementById('historyModal')));
+      bootstrap.Modal.getInstance(document.getElementById('historyModal'))?.hide());
   }
 
   async function openModal_() {
-    openModal(document.getElementById('historyModal'));
+    const modal = document.getElementById('historyModal');
+    if (!modal) return;
+    bootstrap.Modal.getOrCreateInstance(modal).show();
     const list = document.getElementById('historyList');
     if (!list) return;
 
@@ -194,8 +193,8 @@ const CustomerProfile = (() => {
     list.innerHTML = `<div class="skeleton" style="height:80px;border-radius:8px;margin-bottom:8px"></div>
                       <div class="skeleton" style="height:80px;border-radius:8px"></div>`;
     try {
-      const snap = await db.collection(COLL.orders).where('customer', '==', name)
-        .orderBy('createdAt', 'desc').limit(20).get();
+      const snap = await db.collection(COLL.orders).where('ownerId', '==', (await Auth.ensureClient()).uid)
+        .get();
       const orders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       if (!orders.length) {
         list.innerHTML = `<div class="empty-state"><div class="empty-icon">📦</div><p>Aún no tienes pedidos</p></div>`;
@@ -1161,7 +1160,7 @@ const I18n = (() => {
         <td><span class="small">${html(method)}</span>${proof ? '<div><span class="badge text-bg-info mt-1">Imagen adjunta</span></div>' : ''}</td>
         <td>${receiptStatus(order)}</td>
         <td><div class="d-flex gap-1 flex-wrap">
-          ${url ? `<a class="btn btn-primary btn-sm" href="${html(url)}" data-open-receipt><i class="bi bi-eye me-1"></i>Ver</a>
+          ${url && !rejected ? `<button class="btn btn-outline-secondary btn-sm" data-issue-receipt="${html(order.id)}" title="Actualizar enlace del recibo">Actualizar</button><a class="btn btn-primary btn-sm" href="${html(url)}" data-open-receipt><i class="bi bi-eye me-1"></i>Ver</a>
             <a class="btn btn-outline-primary btn-sm" href="${html(publicReceiptUrl(order, true))}" data-open-receipt><i class="bi bi-printer me-1"></i>Imprimir</a>` : `<button class="btn btn-primary btn-sm" data-issue-receipt="${html(order.id)}" ${rejected ? 'disabled title="No se emite para pedidos rechazados"' : ''}><i class="bi bi-file-earmark-pdf me-1"></i>Emitir</button>`}
           ${proof ? `<button class="btn btn-outline-info btn-sm kiosk-proof-button" data-view-proof="${html(order.id)}"><i class="bi bi-image me-1"></i>Pago</button>` : ''}
           ${url ? `<button class="btn btn-outline-secondary btn-sm" data-copy-receipt="${html(url)}" title="Copiar enlace"><i class="bi bi-link-45deg"></i></button>` : ''}
@@ -1174,20 +1173,20 @@ const I18n = (() => {
     body.querySelectorAll('[data-issue-receipt]').forEach(button => button.addEventListener('click', () => issueReceipt(button.dataset.issueReceipt, button)));
     body.querySelectorAll('[data-view-proof]').forEach(button => button.addEventListener('click', () => openPaymentProof(button.dataset.viewProof)));
     body.querySelectorAll('[data-copy-receipt]').forEach(button => button.addEventListener('click', async () => {
-      await navigator.clipboard.writeText(button.dataset.copyReceipt);
-      toast('Enlace público copiado', 'success');
+      try { await navigator.clipboard.writeText(button.dataset.copyReceipt); toast('Enlace copiado', 'success'); }
+      catch { toast('No se pudo copiar. Abre el recibo y copia su direccion.', 'warning'); }
     }));
   }
 
   function startAdminReceipts() {
-    if (!window.auth?.currentUser) return;
+    if (!window.Auth?.hasAdministrativeAccess()) return;
     state.receiptsUnsubscribe?.();
     state.proofsUnsubscribe?.();
     const body = document.getElementById('kReceiptsBody');
     if (body) body.innerHTML = '<tr><td colspan="8" class="text-center py-4"><span class="spinner-border spinner-border-sm"></span></td></tr>';
     state.receiptsUnsubscribe = db.collection(COLL.orders).onSnapshot(snapshot => {
       state.adminOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-        .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+        .sort((a, b) => KioscoCore.timestamp(b.createdAt) - KioscoCore.timestamp(a.createdAt));
       renderAdminReceipts(state.adminOrders);
     }, error => {
       if (body) body.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-4">${html(error.message)}</td></tr>`;
@@ -1204,6 +1203,13 @@ const I18n = (() => {
     return [...bytes].map(value => value.toString(16).padStart(2, '0')).join('');
   }
 
+  function receiptProjection(orderId, order, billing) {
+    return { orderId, status: order.status || 'pending', items: (order.items || []).map(item => ({
+      name: String(item.name || 'Producto'), qty: Number(item.qty || 0), price: Number(item.price || 0),
+      subtotal: Number(item.subtotal ?? Number(item.qty || 0) * Number(item.price || 0)), unit: String(item.unit || 'UND')
+    })), total: Number(order.total || 0), paymentMethod: String(order.paymentMethod || ''),
+      billing, createdAt: order.createdAt || firebase.firestore.FieldValue.serverTimestamp() };
+  }
   async function reserveReceiptClientSide(orderId) {
     const orderRef = db.collection(COLL.orders).doc(orderId);
     const configRef = db.collection(COLL.config).doc('billing');
@@ -1212,23 +1218,21 @@ const I18n = (() => {
       const configSnapshot = await transaction.get(configRef);
       if (!orderSnapshot.exists) throw new Error('Pedido no encontrado');
       const order = orderSnapshot.data() || {};
-      if (String(order.status || '').toLowerCase() === 'rejected') throw new Error('No se puede emitir un recibo para un pedido rechazado');
-      const existing = order.billing || {};
-      if (existing.publicToken && existing.number) return { id: orderId, ...order };
+      if (['rejected', 'cancelled'].includes(order.status)) throw new Error('No se puede emitir un recibo para un pedido rechazado');
       const config = configSnapshot.exists ? configSnapshot.data() : {};
-      const series = String(config.series || 'B001').toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 10) || 'B001';
-      const number = Math.max(1, Math.trunc(Number(config.nextNumber || 1)));
-      const billing = {
-        ...existing,
-        series,
-        number,
-        publicToken: existing.publicToken || randomToken(),
-        public: true,
-        issuedAt: firebase.firestore.FieldValue.serverTimestamp(),
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-      };
-      transaction.set(configRef, { nextNumber: number + 1, series, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
-      transaction.update(orderRef, { billing });
+      const existing = order.billing || {};
+      const issued = Boolean(existing.publicToken && existing.number && existing.series);
+      const series = issued ? existing.series : (String(config.series || 'B001').toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 10) || 'B001');
+      const rawNumber = Number(config.nextNumber || 1);
+      if (!issued && (!Number.isSafeInteger(rawNumber) || rawNumber < 1)) throw new Error('Configura un correlativo valido para el recibo.');
+      const billing = issued ? existing : { series, number: rawNumber, publicToken: randomToken(), public: true,
+        issuedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
+      if (!issued) {
+        transaction.set(configRef, { nextNumber: rawNumber + 1, series, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+        transaction.update(orderRef, { billing });
+      }
+      // The share URL exposes the receipt only, never the customer's phone/address or the full order.
+      transaction.set(db.collection('public_receipts').doc(billing.publicToken), receiptProjection(orderId, order, billing));
       return { id: orderId, ...order, billing };
     });
   }
@@ -1293,13 +1297,13 @@ const I18n = (() => {
     const token = params.get('receiptToken') || '';
     if (!orderId || !token) return false;
     const [orderSnapshot, themeSnapshot, billingSnapshot] = await Promise.all([
-      db.collection(COLL.orders).doc(orderId).get(),
+      db.collection('public_receipts').doc(token).get(),
       db.collection(COLL.config).doc('theme').get(),
       db.collection(COLL.config).doc('billing').get()
     ]);
-    if (!orderSnapshot.exists) throw new Error('Recibo no encontrado');
+    if (!orderSnapshot.exists) throw new Error('Recibo no publicado. Solicita al administrador que vuelva a emitirlo.');
     const order = { id: orderId, ...orderSnapshot.data() };
-    if (order.billing?.public !== true || String(order.billing?.publicToken || '') !== token) throw new Error('Enlace de recibo inválido');
+    if (order.orderId !== orderId || order.billing?.public !== true || String(order.billing?.publicToken || '') !== token) throw new Error('Enlace de recibo inválido');
     const theme = themeSnapshot.exists ? themeSnapshot.data() : {};
     const billing = billingSnapshot.exists ? billingSnapshot.data() : {};
     const total = Number(order.total || 0);
@@ -1315,7 +1319,7 @@ const I18n = (() => {
 </button><button class="btn btn-primary" onclick="window.print()"><i class="bi bi-printer me-1"></i>Imprimir / guardar PDF</button></div>
       <main class="kiosk-print-sheet">
         <header class="kiosk-print-header">${logo}<div><h1 class="h4 mb-2">${html(billing.businessName || theme.storeName || 'Kiosco')}</h1><div>${html(billing.address || '')}</div><div>${html(billing.phone || '')}</div><div>${html(billing.email || '')}</div></div><div class="kiosk-print-box"><div>RUC ${html(billing.ruc || 'POR CONFIGURAR')}</div><div>${html(billing.documentTitle || 'RECIBO DE VENTA')}</div><div>${html(documentNumber)}</div></div></header>
-        <section class="kiosk-print-meta"><strong>Fecha de emisión</strong><span>${html(issued.toLocaleString('es-PE', { timeZone: 'America/Lima' }))}</span><strong>Cliente</strong><span>${html(order.customer || 'Cliente')}</span><strong>Teléfono</strong><span>${html(order.customerPhone || '-')}</span><strong>Entrega</strong><span>${html(order.deliveryAddress || (order.deliveryType === 'delivery' ? 'Delivery' : 'Recojo en tienda'))}</span><strong>Método de pago</strong><span>${html(({ cash: 'Efectivo', card: 'Tarjeta', yape: 'Yape', plin: 'Plin' })[order.paymentMethod] || order.paymentMethod || 'No indicado')}</span></section>
+        <section class="kiosk-print-meta"><strong>Fecha de emisión</strong><span>${html(issued.toLocaleString('es-PE', { timeZone: 'America/Lima' }))}</span><strong>Pedido</strong><span>${html(orderId)}</span><strong>Método de pago</strong><span>${html(({ cash: 'Efectivo', card: 'Tarjeta', yape: 'Yape', plin: 'Plin' })[order.paymentMethod] || order.paymentMethod || 'No indicado')}</span></section>
         <table class="kiosk-print-table"><thead><tr><th>Cant.</th><th>Unidad</th><th>Descripción</th><th>P. Unit.</th><th>Total</th></tr></thead><tbody>${(order.items || []).map(item => `<tr><td>${Number(item.qty || 0)}</td><td>${html(item.unit || 'UND')}</td><td>${html(item.name || 'Producto')}</td><td>${receiptMoney(item.price)}</td><td>${receiptMoney(item.subtotal ?? Number(item.price || 0) * Number(item.qty || 0))}</td></tr>`).join('')}</tbody></table>
         <div class="kiosk-print-totals"><div class="kiosk-print-total-row"><span>Op. gravadas</span><strong>${receiptMoney(subtotal)}</strong></div><div class="kiosk-print-total-row"><span>IGV 18%</span><strong>${receiptMoney(igv)}</strong></div><div class="kiosk-print-total-row kiosk-print-grand"><span>Total</span><span>${receiptMoney(total)}</span></div></div>
         <footer class="kiosk-print-footer">Representación impresa informativa. No sustituye un comprobante electrónico autorizado por SUNAT.<br>Pedido ${html(orderId)}</footer>
@@ -1370,13 +1374,14 @@ const I18n = (() => {
   function startPublicReceipts() {
     createPublicReceiptsPanel();
     state.publicUnsubscribe?.();
+    state.publicUnsubscribe = null;
     const identity = clientIdentity();
     if (!identity.name) return renderPublicReceipts([]);
-    let query = db.collection(COLL.orders).where('customer', '==', identity.name);
-    if (identity.phone) query = query.where('customerPhone', '==', identity.phone);
-    state.publicUnsubscribe = query.limit(30).onSnapshot(snapshot => {
+    if (!window.auth?.currentUser) return;
+    const query = db.collection(COLL.orders).where('ownerId', '==', auth.currentUser.uid);
+    state.publicUnsubscribe = query.onSnapshot(snapshot => {
       const orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-        .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+        .sort((a, b) => KioscoCore.timestamp(b.createdAt) - KioscoCore.timestamp(a.createdAt));
       renderPublicReceipts(orders);
     }, error => console.warn('Recibos públicos:', error));
   }
@@ -1394,6 +1399,12 @@ const I18n = (() => {
   }
 
   function bindIdentityChanges() {
+    window.addEventListener('auth:client-updated', startPublicReceipts);
+    window.addEventListener('auth:logout', () => {
+      state.publicUnsubscribe?.(); state.receiptsUnsubscribe?.(); state.proofsUnsubscribe?.();
+      state.adminOrders = []; state.paymentProofs = new Map(); renderPublicReceipts([]);
+      const body = document.getElementById('kReceiptsBody'); if (body) body.replaceChildren();
+    });
     document.getElementById('clientLoginForm')?.addEventListener('submit', () => setTimeout(startPublicReceipts, 200));
     document.getElementById('saveProfileBtn')?.addEventListener('click', () => setTimeout(startPublicReceipts, 200));
     document.getElementById('logoutClientBtn')?.addEventListener('click', () => setTimeout(startPublicReceipts, 200));
@@ -1414,7 +1425,7 @@ const I18n = (() => {
     bindIdentityChanges();
     startPublicReceipts();
     auth?.onAuthStateChanged?.(user => {
-      if (user && document.getElementById('sec-receipts')?.classList.contains('active')) startAdminReceipts();
+      if (user && !user.isAnonymous && document.getElementById('sec-receipts')?.classList.contains('active')) startAdminReceipts();
     });
     window.KioscoReceiptsAppearance = Object.freeze({
       refreshPublicReceipts: startPublicReceipts,
@@ -2098,6 +2109,7 @@ const I18n = (() => {
     window.db.runTransaction = function auditedTransaction(updateFunction, options) {
       const actions = [];
       const wrappedUpdate = transaction => {
+        actions.length = 0; // Discard audit events from retried transactions.
         const proxy = new Proxy(transaction, {
           get(target, property) {
             if (property === 'set') return (reference, data, setOptions) => {
@@ -2163,16 +2175,7 @@ const I18n = (() => {
   }
 
   function periodStart(period, now = new Date()) {
-    const start = new Date(now);
-    start.setHours(0, 0, 0, 0);
-    if (period === 'week') {
-      const day = start.getDay();
-      const diff = day === 0 ? 6 : day - 1;
-      start.setDate(start.getDate() - diff);
-    } else if (period === 'month') {
-      start.setDate(1);
-    }
-    return start;
+    return new Date(KioscoCore.periodRange(period, now).start);
   }
 
   function logDate(log) {
@@ -2242,10 +2245,9 @@ const I18n = (() => {
   function subscribe() {
     if (state.unsubscribe || !window.db) return;
     state.unsubscribe = window.db.collection(AUDIT_COLLECTION)
-      .orderBy('createdAt', 'desc')
-      .limit(MAX_VISIBLE_LOGS)
+
       .onSnapshot(snapshot => {
-        state.logs = snapshot.docs.map(document => ({ id: document.id, ...document.data() }));
+        state.logs = snapshot.docs.map(document => ({ id: document.id, ...document.data() })).sort((a, b) => KioscoCore.timestamp(b.createdAt || b.clientCreatedAt) - KioscoCore.timestamp(a.createdAt || a.clientCreatedAt));
         render();
       }, error => {
         console.error('Auditoría:', error);
@@ -2477,7 +2479,7 @@ const I18n = (() => {
   const VERSION = '1.0.1';
   const PRODUCT_HASH_PREFIX = '#producto-';
   const PUBLIC_STORE_URL = 'https://mi-kiosco-c7313.web.app/';
-  const QR_CODE_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.1/qrcode.min.js';
+  const QR_CODE_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
   const JS_QR_CDN = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js';
 
   if (window.KioscoProductExperience?.version) return;
@@ -2805,7 +2807,7 @@ const I18n = (() => {
         <div class="col-lg-7 d-flex flex-column">
           <div class="d-flex flex-wrap gap-2 mb-2">${categoryBadges || '<span class="badge text-bg-secondary">Sin categoría</span>'}</div>
           <h2 class="h3 fw-bold mb-2">${escapeHtml(product.name)}</h2>
-          <div class="kiosco-product-price mb-3">${escapeHtml(formatMoney(product.price))}</div>
+          <div class="kiosco-product-price mb-3">${escapeHtml(formatMoney(KioscoCore.basePrice(product)))}</div>
           <p class="text-body-secondary kiosco-product-full-description">${escapeHtml(product.description || 'Sin descripción disponible.')}</p>
 
           <div class="mb-3">
@@ -2913,7 +2915,7 @@ const I18n = (() => {
       : `Stock disponible: ${Math.max(0, Number(product.stock) || 0)}`;
     const lines = [
       `*${product.name}*`,
-      `Precio: ${formatMoney(product.price)}`,
+      `Precio: ${formatMoney(KioscoCore.basePrice(product))}`,
       product.description ? normalizeText(product.description) : null,
       stockText,
       productUrl(product.id)
@@ -2931,6 +2933,7 @@ const I18n = (() => {
 
     try {
       await loadScript(QR_CODE_CDN, 'QRCode');
+      window.KioscoQr?.install();
       if (!window.QRCode?.toCanvas) throw new Error('La librería QR no está disponible');
 
       const canvas = document.getElementById('kioscoProductQrCanvas');
@@ -3289,7 +3292,7 @@ const I18n = (() => {
   const VERSION = '1.0.1';
   const EXPENSE_CATEGORIES = ['Mercadería', 'Servicios', 'Transporte', 'Personal', 'Otros'];
   const CHART_CDN = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
-  const XLSX_CDN = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+  const XLSX_CDN = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
   const JSPDF_CDN = 'https://unpkg.com/jspdf@4.2.1/dist/jspdf.umd.min.js';
   const BATCH_SIZE = 10;
 
@@ -3710,7 +3713,8 @@ const I18n = (() => {
   }
 
   function subscribeExpenses() {
-    if (state.expenseUnsubscribe || !window.db || !window.auth?.currentUser) return;
+    if (state.expenseUnsubscribe || !window.db || !window.Auth?.hasAdministrativeAccess()) return;
+    if (window.KioscoSystem && !window.KioscoSystem.can('expenses') && !window.KioscoSystem.can('cash')) return;
     state.expenseUnsubscribe = db.collection(COLL.expenses || 'expenses').onSnapshot(snapshot => {
       state.expenses = snapshot.docs.map(documentSnapshot => ({ id: documentSnapshot.id, ...documentSnapshot.data() }));
       state.expenses.sort((a, b) => (toDate(b.date)?.getTime() || 0) - (toDate(a.date)?.getTime() || 0));
@@ -3966,7 +3970,7 @@ const I18n = (() => {
     }).reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
     const revenue = state.dashboardOrders.filter(order => {
       const date = toDate(order.createdAt);
-      return date && date >= start && date < end && order.status !== 'rejected';
+      return date && date >= start && date < end && order.status === 'done';
     }).reduce((sum, order) => sum + Number(order.total || 0), 0);
     const net = Number((revenue - expenses).toFixed(2));
     const isPositive = net > 0;
@@ -4333,7 +4337,7 @@ const I18n = (() => {
             name: String(product.name || 'Sin nombre'),
             description: String(product.description || 'Sin descripción'),
             category: categoryName,
-            price: formatMoney(product.price),
+            price: formatMoney(KioscoCore.basePrice(product)),
             stock: product.stock === null || product.stock === undefined || product.stock === '' ? 'Ilimitado' : String(Math.max(0, Number(product.stock) || 0))
           };
           const wrapped = {
@@ -4498,6 +4502,9 @@ const I18n = (() => {
   async function readProductsExcel(file) {
     if (!file) return;
     if (!/\.(xlsx|xls)$/i.test(file.name)) return notify('Selecciona un archivo .xlsx o .xls', 'warning');
+    if (state.importInProgress) return;
+    state.importRows = [];
+    if (file.size > 5 * 1024 * 1024) return notify('El Excel supera 5 MB.', 'warning');
     try {
       const XLSX = await ensureXlsx();
       const data = await file.arrayBuffer();
@@ -4506,8 +4513,9 @@ const I18n = (() => {
       if (!firstSheet) throw new Error('El archivo no contiene hojas');
       const rawRows = XLSX.utils.sheet_to_json(firstSheet, { defval: '', raw: true });
       state.importRows = rawRows
-        .map((raw, index) => canonicalImportRow(raw, index + 2))
+        .map((raw, index) => canonicalImportRow(raw, Number.isInteger(raw.__rowNum__) ? raw.__rowNum__ + 1 : index + 2))
         .filter(row => Object.entries(row).some(([key, value]) => key !== 'rowNumber' && String(value ?? '').trim() !== ''));
+      if (state.importRows.length > 5000) throw new Error('Importa hasta 5000 filas por archivo.');
       state.importFileName = file.name;
       document.getElementById('productsImportResult').classList.add('d-none');
       renderImportPreview();
@@ -4526,67 +4534,12 @@ const I18n = (() => {
   }
 
   function validateImportRow(row) {
-    const errors = [];
-    const name = String(row.nombre ?? '').trim();
-    const description = String(row.descripcion ?? '').trim();
-    const price = parseDecimal(row.precio);
-    const stockRaw = String(row.stock ?? '').trim();
-    const stockNumber = stockRaw === '' ? null : Number(stockRaw);
-    const categoryName = String(row.categoria ?? '').trim();
-    const subcategoryName = String(row.subcategoria ?? '').trim();
-    const imageUrl = String(row.imageUrl ?? '').trim();
-    const activeRaw = normalizeName(row.activo || 'SI');
-
-    if (!name) errors.push('nombre requerido');
-    if (!Number.isFinite(price) || price < 0) errors.push('precio inválido');
-    if (stockNumber !== null && (!Number.isInteger(stockNumber) || stockNumber < 0)) errors.push('stock debe ser un entero mayor o igual a 0, o quedar vacío');
-    if (imageUrl) {
-      try {
-        const url = new URL(imageUrl);
-        if (!['http:', 'https:'].includes(url.protocol)) throw new Error('protocol');
-      } catch (error) {
-        errors.push('imageUrl inválida');
-      }
+    const result = KioscoCore.validateImport(row, getAdminCategories());
+    if (result.valid) {
+      result.payload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+      result.payload.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
     }
-
-    let active = true;
-    if (['si', 'sí', 'yes', 'true', '1'].includes(activeRaw)) active = true;
-    else if (['no', 'false', '0'].includes(activeRaw)) active = false;
-    else errors.push('activo debe ser SI o NO');
-
-    const categories = getAdminCategories();
-    const mainCategories = categories.filter(category => !category.parentId);
-    const category = categoryName
-      ? mainCategories.find(item => normalizeName(item.name) === normalizeName(categoryName))
-      : null;
-    if (categoryName && !category) errors.push(`categoría “${categoryName}” no existe`);
-
-    let subcategory = null;
-    if (subcategoryName) {
-      subcategory = categories.find(item => item.parentId && normalizeName(item.name) === normalizeName(subcategoryName)
-        && (!category || item.parentId === category.id));
-      if (!subcategory) errors.push(`subcategoría “${subcategoryName}” no existe${category ? ` dentro de ${category.name}` : ''}`);
-    }
-
-    const categoryId = category?.id || (subcategory?.parentId || null);
-    if (errors.length) return { valid: false, errors };
-    return {
-      valid: true,
-      payload: {
-        name,
-        description,
-        price: Number(price.toFixed(2)),
-        stock: stockNumber,
-        categoryId,
-        subcategoryId: subcategory?.id || null,
-        imageUrl: imageUrl || null,
-        active,
-        unit: 'Unidad',
-        discountPercent: 0,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-      }
-    };
+    return result;
   }
 
   function updateImportProgress(done, total) {
@@ -4621,12 +4574,14 @@ const I18n = (() => {
     const errors = [];
     const validRows = [];
     state.importRows.forEach(row => {
-      const validation = validateImportRow(row);
+      let validation;
+      try { validation = validateImportRow(row); } catch (error) { validation = { valid: false, errors: [error.message] }; }
       if (!validation.valid) {
         errors.push({ row: row.rowNumber, reason: validation.errors.join('; ') });
         processed += 1;
       } else {
-        validRows.push({ row, payload: validation.payload });
+        if (!row.imported) validRows.push({ row, payload: validation.payload });
+        else processed += 1;
       }
     });
     updateImportProgress(processed, state.importRows.length);
@@ -4637,6 +4592,7 @@ const I18n = (() => {
         const results = await Promise.all(batch.map(async entry => {
           try {
             await db.collection(COLL.products).add(entry.payload);
+            entry.row.imported = true;
             return { ok: true, row: entry.row.rowNumber };
           } catch (error) {
             return { ok: false, row: entry.row.rowNumber, reason: error.message };
@@ -4659,7 +4615,7 @@ const I18n = (() => {
       notify(`La importación se interrumpió: ${error.message}`, 'danger');
     } finally {
       state.importInProgress = false;
-      button.disabled = false;
+      button.disabled = !state.importRows.some(row => !row.imported);
       closeButton.disabled = false;
       button.innerHTML = `<i class="bi bi-cloud-arrow-up me-2"></i>Importar ${state.importRows.length} productos`;
     }
@@ -4730,7 +4686,7 @@ const I18n = (() => {
     });
 
     window.auth?.onAuthStateChanged?.(user => {
-      if (user) subscribeExpenses();
+      if (user && window.Auth?.hasAdministrativeAccess()) subscribeExpenses();
       else unsubscribeExpenses();
     });
   }
@@ -4741,7 +4697,9 @@ const I18n = (() => {
     state.dashboardOrders = window.Dashboard?.getOrders?.() || [];
     state.dashboardPeriod = window.Dashboard?.getPeriod?.() || 'day';
     observeAdminProductGrid();
-    if (window.auth?.currentUser) subscribeExpenses();
+    if (window.Auth?.hasAdministrativeAccess()) subscribeExpenses();
+    window.addEventListener('auth:logout', unsubscribeExpenses);
+    window.addEventListener('auth:role-changed', () => { unsubscribeExpenses(); subscribeExpenses(); });
     renderExpenses();
     renderDashboardFinancials();
   }
@@ -4949,7 +4907,7 @@ const I18n = (() => {
       if (!date) return;
       const item = byDay[date.getDate() - 1];
       item.count += 1;
-      if (order.status !== 'rejected') item.revenue += Number(order.total || 0);
+      if (order.status === 'done') item.revenue += Number(order.total || 0);
     });
 
     label.textContent = state.calendarDate.toLocaleDateString('es-PE', { month: 'long', year: 'numeric' });
@@ -5456,6 +5414,7 @@ const I18n = (() => {
       media: 'appearance'
     };
     const key = map[section] || section;
+    if (key === 'staff' && !state.access.mainAdmin) return false;
     const value = p[key];
     if (typeof value === 'boolean') return value;
     if (value && typeof value === 'object') return Boolean(value[action] ?? value.view);
@@ -5463,7 +5422,7 @@ const I18n = (() => {
   }
 
   async function resolveAdministrativeAccess(user) {
-    if (!user) {
+    if (!user || user.isAnonymous) {
       state.access = { mainAdmin: false, member: null, permissions: null };
       state.accessReady = true;
       return false;
@@ -5472,12 +5431,13 @@ const I18n = (() => {
       state.accessReady = false;
       return false;
     }
-    const phone = getFirebasePhone(user);
-    if (!phone) {
-      state.access = { mainAdmin: false, member: null, permissions: null };
+    if (await Auth.checkMainAdmin(user)) {
+      state.access = { mainAdmin: true, member: null, permissions: clonePermissions(fullPermissions) };
       state.accessReady = true;
-      return false;
+      return true;
     }
+    const phone = getFirebasePhone(user);
+    if (!user.uid) return false;
 
     let adminDoc = null;
     try {
@@ -5502,13 +5462,13 @@ const I18n = (() => {
     try {
       staffDoc = await db.collection(COLL.config).doc('staff').get();
     } catch (error) {
-      console.warn('Validación de personal:', error?.message || error);
+      if (error?.code !== 'permission-denied') console.warn('Validacion de personal:', error?.message || error);
       state.access = { mainAdmin: false, member: null, permissions: null };
       state.accessReady = true;
       return false;
     }
     const members = staffDoc?.exists && Array.isArray(staffDoc.data().members) ? staffDoc.data().members : [];
-    const member = members.find(item => String(item.phone || '').trim() === phone);
+    const member = members.find(item => (item.uid && item.uid === user.uid) || (phone && String(item.phone || '').trim() === phone));
     if (!member || !['employee', 'admin'].includes(String(member.role || 'employee'))) {
       state.access = { mainAdmin: false, member: null, permissions: null };
       state.accessReady = true;
@@ -5529,6 +5489,7 @@ const I18n = (() => {
   }
 
   function runAdminSideEffects(user) {
+    ensureStaffPhoneIndex().catch(() => {});
     loadMediaConfig()
       .then(() => window.setTimeout(() => populateMediaAdmin(), 0))
       .catch(error => console.warn('Configuración de imágenes:', error?.message || error));
@@ -5544,7 +5505,8 @@ const I18n = (() => {
     try {
       Auth.checkIsAdmin = async user => {
         try {
-          if (await originalCheck(user)) {
+          if (!user || user.isAnonymous) return false;
+        if (await originalCheck(user)) {
             state.access = { mainAdmin: true, member: null, permissions: clonePermissions(fullPermissions) };
             state.accessReady = true;
             runAdminSideEffects(user);
@@ -5574,7 +5536,12 @@ const I18n = (() => {
       const phones = [...new Set(members.map(item => String(item.phone || '').trim()).filter(Boolean))];
       const current = Array.isArray(doc.data().phones) ? doc.data().phones : [];
       const same = current.length === phones.length && current.every(phone => phones.includes(phone));
-      if (!same) await ref.set({ phones, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+      const permissionsByPhone = Object.fromEntries(members.filter(item => item.phone).map(item => [String(item.phone), item.role === 'admin' ? clonePermissions(fullPermissions) : clonePermissions(item.permissions)]));
+      const uids = [...new Set(members.map(item => String(item.uid || '').trim()).filter(Boolean))];
+      const permissionsByUid = Object.fromEntries(members.filter(item => item.uid).map(item => [String(item.uid), item.role === 'admin' ? clonePermissions(fullPermissions) : clonePermissions(item.permissions)]));
+      if (!same || JSON.stringify(doc.data().permissionsByPhone || {}) !== JSON.stringify(permissionsByPhone) || JSON.stringify(doc.data().permissionsByUid || {}) !== JSON.stringify(permissionsByUid)) {
+        await ref.set({ phones, permissionsByPhone, uids, permissionsByUid, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+      }
     } catch (error) {
       console.warn('No se pudo actualizar el índice de teléfonos del personal:', error);
     }
@@ -5614,7 +5581,7 @@ const I18n = (() => {
   async function logAdminSession(user) {
     if (state.sessionLogged || !user || !window.db) return;
     const phone = getFirebasePhone(user);
-    if (!phone) return;
+    if (!user.uid) return;
     const sessionKey = `kk_session_logged_${user.uid || normalizePhone(phone)}`;
     if (sessionStorage.getItem(sessionKey) === '1') {
       state.sessionLogged = true;
@@ -5622,7 +5589,7 @@ const I18n = (() => {
     }
     try {
       await db.collection('session_log').add({
-        phone,
+        uid: user.uid, phone,
         loginAt: firebase.firestore.FieldValue.serverTimestamp(),
         userAgent: navigator.userAgent || '',
         platform: navigator.platform || '',
@@ -5732,11 +5699,11 @@ const I18n = (() => {
       price.innerHTML = `
         <div class="kk-price-input">
           <label class="form-label small mb-1" for="kkPriceMin">Precio mínimo</label>
-          <div class="input-group input-group-sm"><span class="input-group-text">S/</span><input id="kkPriceMin" type="number" min="0" step="0.10" class="form-control" inputmode="decimal"></div>
+          <div class="input-group input-group-sm"><span class="input-group-text">S/</span><input id="kkPriceMin" type="number" min="0" step="0.01" class="form-control" inputmode="decimal"></div>
         </div>
         <div class="kk-price-input">
           <label class="form-label small mb-1" for="kkPriceMax">Precio máximo</label>
-          <div class="input-group input-group-sm"><span class="input-group-text">S/</span><input id="kkPriceMax" type="number" min="0" step="0.10" class="form-control" inputmode="decimal"></div>
+          <div class="input-group input-group-sm"><span class="input-group-text">S/</span><input id="kkPriceMax" type="number" min="0" step="0.01" class="form-control" inputmode="decimal"></div>
         </div>
         <button type="button" id="kkApplyPriceBtn" class="btn btn-primary btn-sm" title="Aplicar filtro"><i class="bi bi-funnel me-1"></i>Aplicar</button>
         <button type="button" id="kkClearPriceBtn" class="btn btn-outline-secondary btn-sm" title="Limpiar filtro"><i class="bi bi-x me-1"></i>Limpiar</button>`;
@@ -5818,7 +5785,7 @@ const I18n = (() => {
     columns.forEach(column => {
       const id = column.querySelector('.prod-card[data-product-id]')?.dataset.productId;
       const product = productMap.get(String(id));
-      const price = Number(product?.price || 0);
+      const price = product ? KioscoCore.basePrice(product) : 0;
       const allowed = product
         && (state.priceMin == null || price >= state.priceMin)
         && (state.priceMax == null || price <= state.priceMax);
@@ -5832,13 +5799,17 @@ const I18n = (() => {
         const rightId = right.querySelector('.prod-card[data-product-id]')?.dataset.productId;
         const a = productMap.get(String(leftId)) || {};
         const b = productMap.get(String(rightId)) || {};
-        if (state.sortMode === 'price-asc') return Number(a.price || 0) - Number(b.price || 0);
-        if (state.sortMode === 'price-desc') return Number(b.price || 0) - Number(a.price || 0);
+        if (state.sortMode === 'price-asc') return KioscoCore.basePrice(a) - KioscoCore.basePrice(b);
+        if (state.sortMode === 'price-desc') return KioscoCore.basePrice(b) - KioscoCore.basePrice(a);
         if (state.sortMode === 'name-desc') return String(b.name || '').localeCompare(String(a.name || ''), 'es', { sensitivity: 'base' });
         if (state.sortMode === 'recent') return productTimestamp(b) - productTimestamp(a);
         return String(a.name || '').localeCompare(String(b.name || ''), 'es', { sensitivity: 'base' });
       });
-      sorted.forEach(column => grid.append(column));
+      if (sorted.some((column, index) => column !== columns[index])) {
+        state.catalogObserver?.disconnect();
+        sorted.forEach(column => grid.append(column));
+        state.catalogObserver?.observe(grid, { childList: true, subtree: true });
+      }
     }
     const counter = document.getElementById('kkResultsCount');
     if (counter) counter.textContent = `${visible} ${visible === 1 ? 'producto encontrado' : 'productos encontrados'}`;
@@ -5877,7 +5848,7 @@ const I18n = (() => {
     state.categories = window.Store?.getCategories?.() || [];
     if (state.products.length) cacheStoreData('products', state.products);
     if (state.categories.length) cacheStoreData('categories', state.categories);
-    refreshAdminProductSelects();
+    window.Admin?.refreshProductSelects?.();
     applyCatalogEnhancements();
     renderFeatured();
     renderOffer();
@@ -5888,7 +5859,7 @@ const I18n = (() => {
       state.products = Array.isArray(event.detail?.products) ? event.detail.products : (window.Store?.getProducts?.() || []);
       cacheStoreData('products', state.products);
       state.firstProductsReady = true;
-      refreshAdminProductSelects();
+      window.Admin?.refreshProductSelects?.();
       scheduleCatalogApply();
       renderFeatured();
       renderOffer();
@@ -5947,7 +5918,7 @@ const I18n = (() => {
         <div class="card-body d-flex flex-column p-3">
           <h3 class="card-title prod-name mb-1 h6">${esc(product.name)}</h3>
           ${product.description ? `<p class="card-text prod-desc text-muted small mb-2">${esc(product.description)}</p>` : ''}
-          <div class="mt-auto"><div class="d-flex justify-content-between align-items-center gap-2 mb-2"><span class="prod-price fw-bold">${money(product.price)} / ${esc(product.unit || 'Unidad')}</span>${stock != null ? `<small class="${stock <= 0 ? 'text-danger' : 'text-muted'}">Disponible: ${Math.max(stock, 0)}</small>` : ''}</div>
+          <div class="mt-auto"><div class="d-flex justify-content-between align-items-center gap-2 mb-2"><span class="prod-price fw-bold">${money(KioscoCore.basePrice(product))} / ${esc(product.unit || 'Unidad')}</span>${stock != null ? `<small class="${stock <= 0 ? 'text-danger' : 'text-muted'}">Disponible: ${Math.max(stock, 0)}</small>` : ''}</div>
           <button type="button" class="btn btn-sm w-100 ${stock === 0 ? 'btn-outline-secondary' : 'btn-primary'} btn-add" data-kk-cache-add="${esc(product.id)}" ${stock === 0 ? 'disabled' : ''}><i class="bi bi-cart-plus me-1"></i>${stock === 0 ? 'Agotado' : 'Agregar'}</button></div>
         </div></article></div>`;
     }).join('');
@@ -6127,6 +6098,8 @@ const I18n = (() => {
         window.clearInterval(state.offerTimer);
         state.offerTimer = null;
         banner.classList.add('d-none');
+        window.Cart?.syncProducts?.(state.products);
+        window.Store?.refreshCards?.();
         return;
       }
       const total = Math.floor(left / 1000);
@@ -6135,7 +6108,7 @@ const I18n = (() => {
       const ss = String(total % 60).padStart(2, '0');
       banner.querySelector('.kk-offer-timer')?.replaceChildren(document.createTextNode(`${hh}:${mm}:${ss}`));
     };
-    banner.innerHTML = `<div class="kk-offer-main"><strong><i class="bi bi-lightning-charge-fill me-1"></i>${esc(offer.bannerText || 'Oferta del día')}</strong><span>${esc(product.name)}</span><span class="kk-offer-price-old">${money(product.price)}</span><span class="kk-offer-price-new">${money(offer.offerPrice)}</span><span class="kk-offer-timer">00:00:00</span></div><button type="button" class="btn-close" aria-label="Cerrar oferta"></button>`;
+    banner.innerHTML = `<div class="kk-offer-main"><strong><i class="bi bi-lightning-charge-fill me-1"></i>${esc(offer.bannerText || 'Oferta del día')}</strong><span>${esc(product.name)}</span><span class="kk-offer-price-old">${money(KioscoCore.basePrice(product))}</span><span class="kk-offer-price-new">${money(offer.offerPrice)}</span><span class="kk-offer-timer">00:00:00</span></div><button type="button" class="btn-close" aria-label="Cerrar oferta"></button>`;
     banner.querySelector('.btn-close')?.addEventListener('click', () => {
       sessionStorage.setItem(hideKey, '1');
       banner.classList.add('d-none');
@@ -6150,6 +6123,9 @@ const I18n = (() => {
     if (!window.db || !window.COLL) return;
     db.collection(COLL.config).doc('offer').onSnapshot(snapshot => {
       state.offer = snapshot.exists ? snapshot.data() : null;
+      KioscoCore.setOffer(state.offer);
+      window.Cart?.syncProducts?.(state.products);
+      window.Store?.refreshCards?.();
       renderOffer();
       populateOfferAdmin();
     }, error => console.warn('Oferta del día:', error));
@@ -6179,7 +6155,7 @@ const I18n = (() => {
       return;
     }
     const image = getProductDisplayImage(product);
-    section.innerHTML = `<div class="kk-featured-image">${image ? `<img src="${esc(image)}" alt="${esc(product.name)}">` : '<i class="bi bi-bag display-2 text-muted"></i>'}</div><div class="kk-featured-body"><span class="badge text-bg-warning kk-featured-badge mb-2">OFERTA DEL DÍA</span><h2 class="h4 mb-2">${esc(product.name)}</h2>${product.description ? `<p class="text-muted">${esc(product.description)}</p>` : ''}<div class="h5 text-primary fw-bold mb-2">${money(product.price)}</div>${config.message ? `<p class="mb-3 fw-semibold">${esc(config.message)}</p>` : ''}<button type="button" class="btn btn-primary align-self-start" id="kkFeaturedAdd"><i class="bi bi-cart-plus me-2"></i>Agregar al carrito</button></div>`;
+    section.innerHTML = `<div class="kk-featured-image">${image ? `<img src="${esc(image)}" alt="${esc(product.name)}">` : '<i class="bi bi-bag display-2 text-muted"></i>'}</div><div class="kk-featured-body"><span class="badge text-bg-warning kk-featured-badge mb-2">OFERTA DEL DÍA</span><h2 class="h4 mb-2">${esc(product.name)}</h2>${product.description ? `<p class="text-muted">${esc(product.description)}</p>` : ''}<div class="h5 text-primary fw-bold mb-2">${money(KioscoCore.basePrice(product))}</div>${config.message ? `<p class="mb-3 fw-semibold">${esc(config.message)}</p>` : ''}<button type="button" class="btn btn-primary align-self-start" id="kkFeaturedAdd"><i class="bi bi-cart-plus me-2"></i>Agregar al carrito</button></div>`;
     section.querySelector('#kkFeaturedAdd')?.addEventListener('click', () => handleProductAdd(product));
     section.classList.remove('d-none');
   }
@@ -6225,11 +6201,11 @@ const I18n = (() => {
       populateMaintenanceAdmin();
     }, error => console.warn('Modo mantenimiento:', error));
     window.auth?.onAuthStateChanged?.(async user => {
-      if (user) await resolveAdministrativeAccess(user);
+      if (user && !user.isAnonymous) await resolveAdministrativeAccess(user);
       else state.access = { mainAdmin: false, member: null, permissions: null };
       renderMaintenance();
       applyPermissionsToAdmin();
-      if (user) startOrderNotifications(); else stopOrderNotifications();
+      if (user && !user.isAnonymous) startOrderNotifications(); else stopOrderNotifications();
     });
   }
 
@@ -6256,23 +6232,9 @@ const I18n = (() => {
         selections.push(select.value);
         extra += Number(variants[index].extraPrice || 0);
       }
-      const variantItem = {
-        ...product,
-        name: `${product.name} - ${selections.join(' / ')}`,
-        price: Number(product.price || 0) + extra
-      };
-      state.variantCart[product.id] = {
-        name: variantItem.name,
-        price: variantItem.price,
-        selections,
-        extraPrice: extra
-      };
-      writeJson(KEYS.variantCart, state.variantCart);
-      const ok = window.Cart?.add?.(variantItem);
-      if (ok) {
-        bootstrap.Modal.getInstance(document.getElementById('kkVariantModal'))?.hide();
-        notify('Producto agregado con la variante seleccionada', 'success');
-      }
+      if (!window.Cart?.add?.({ ...product, variantSelections: selections })) return;
+      bootstrap.Modal.getInstance(document.getElementById('kkVariantModal'))?.hide();
+      notify('Producto agregado con la variante seleccionada', 'success');
     });
   }
 
@@ -6282,7 +6244,7 @@ const I18n = (() => {
     ensureVariantModal();
     state.variantProduct = product;
     const fields = document.getElementById('kkVariantFields');
-    fields.innerHTML = `<p class="small text-muted mb-3">${esc(product.name)} · ${money(product.price)} base</p>` + variants.map((variant, index) => `<div class="mb-3"><label class="form-label" for="kkVariantSelect${index}">${esc(variant.name)}</label><select class="form-select" id="kkVariantSelect${index}" required><option value="">Seleccionar</option>${variant.options.map(option => `<option value="${esc(option)}">${esc(option)}</option>`).join('')}</select>${Number(variant.extraPrice || 0) ? `<div class="form-text">Adicional: ${money(variant.extraPrice)}</div>` : ''}</div>`).join('');
+    fields.innerHTML = `<p class="small text-muted mb-3">${esc(product.name)} · ${money(KioscoCore.basePrice(product))} base</p>` + variants.map((variant, index) => `<div class="mb-3"><label class="form-label" for="kkVariantSelect${index}">${esc(variant.name)}</label><select class="form-select" id="kkVariantSelect${index}" required><option value="">Seleccionar</option>${variant.options.map(option => `<option value="${esc(option)}">${esc(option)}</option>`).join('')}</select>${Number(variant.extraPrice || 0) ? `<div class="form-text">Adicional: ${money(variant.extraPrice)}</div>` : ''}</div>`).join('');
     bootstrap.Modal.getOrCreateInstance(document.getElementById('kkVariantModal')).show();
   }
 
@@ -6302,7 +6264,7 @@ const I18n = (() => {
       const action = button.dataset.storeAction;
       const product = state.products.find(item => String(item.id) === String(button.dataset.productId || ''));
       if (!product || !variantDefinitions(product).length) return;
-      if (action === 'add') {
+      if (action === 'add' || action === 'increase') {
         event.preventDefault();
         event.stopImmediatePropagation();
         openVariantModal(product);
@@ -6319,140 +6281,8 @@ const I18n = (() => {
   }
 
   function patchCartForVariantsAndCheckout() {
-    if (!window.Cart || Cart.__kioscoSystemPatched) return;
-    const originalAdd = Cart.add.bind(Cart);
-    const originalRemove = Cart.remove.bind(Cart);
-    const originalRemoveAll = Cart.removeAll.bind(Cart);
-    const originalClear = Cart.clear.bind(Cart);
-    const originalSync = Cart.syncProducts.bind(Cart);
-
-    Cart.add = (product, amount = 1) => {
-      const variant = state.variantCart[String(product?.id || '')];
-      const effective = variant && product ? { ...product, name: variant.name, price: variant.price } : product;
-      return originalAdd(effective, amount);
-    };
-    Cart.remove = (id, amount = 1) => {
-      const before = Cart.qty(id);
-      const result = originalRemove(id, amount);
-      if (before > 0 && Cart.qty(id) === 0 && state.variantCart[id]) {
-        delete state.variantCart[id];
-        writeJson(KEYS.variantCart, state.variantCart);
-      }
-      return result;
-    };
-    Cart.removeAll = id => {
-      const result = originalRemoveAll(id);
-      if (state.variantCart[id]) {
-        delete state.variantCart[id];
-        writeJson(KEYS.variantCart, state.variantCart);
-      }
-      return result;
-    };
-    Cart.clear = options => {
-      const result = originalClear(options);
-      if (result) {
-        state.variantCart = {};
-        writeJson(KEYS.variantCart, state.variantCart);
-      }
-      return result;
-    };
-    Cart.syncProducts = list => {
-      originalSync(list);
-      const items = Cart.getItems();
-      items.forEach(item => {
-        const variant = state.variantCart[item.id];
-        const product = Array.isArray(list) ? list.find(entry => String(entry.id) === String(item.id)) : null;
-        if (!variant || !product) return;
-        if (item.name === variant.name && Number(item.price) === Number(variant.price)) return;
-        const qty = item.qty;
-        originalRemoveAll(item.id);
-        originalAdd({ ...product, name: variant.name, price: variant.price }, qty);
-      });
-    };
-
-    Cart.checkout = async (customerName, customerPhone, notes, deliveryType, address, scheduledDate, scheduledTime, gpsCoords) => {
-      const items = Cart.getItems();
-      if (!items.length) throw new Error('El carrito está vacío');
-      if (!String(customerName || '').trim()) throw new Error('El nombre del cliente es obligatorio');
-      if (deliveryType === 'delivery' && !String(address || '').trim()) throw new Error('La dirección de entrega es obligatoria');
-      if (!navigator.onLine) throw new Error('Sin conexión. Tu carrito se mantiene guardado. Intenta enviar el pedido cuando recuperes internet.');
-      if (state.checkoutBusy) throw new Error('El pedido ya se está procesando');
-      if (!window.db || !window.COLL) throw new Error('Firestore no está disponible');
-
-      const phone = normalizePhone(customerPhone);
-      if (phone) {
-        if (await isBlockedClient(phone)) throw new Error('No podemos procesar tu pedido en este momento. Contáctanos para más información.');
-      }
-
-      state.checkoutBusy = true;
-      try {
-        const orderReference = db.collection(COLL.orders).doc();
-        await db.runTransaction(async transaction => {
-          const productSnapshots = [];
-          for (const item of items) {
-            const productReference = db.collection(COLL.products).doc(item.id);
-            const productSnapshot = await transaction.get(productReference);
-            productSnapshots.push({ item, productReference, productSnapshot });
-          }
-          const orderItems = [];
-          for (const entry of productSnapshots) {
-            const { item, productReference, productSnapshot } = entry;
-            if (!productSnapshot.exists) throw new Error(`El producto ${item.name} ya no existe`);
-            const product = productSnapshot.data() || {};
-            if (product.active === false) throw new Error(`El producto ${item.name} no está disponible`);
-            const currentStock = product.stock == null || product.stock === '' ? null : Math.max(0, Math.trunc(Number(product.stock)));
-            if (currentStock !== null && currentStock < item.qty) throw new Error(`Stock insuficiente para ${item.name}. Disponible: ${currentStock}`);
-            const basePrice = Math.max(0, Number(product.price || 0));
-            const variant = state.variantCart[item.id];
-            const finalName = variant?.name || String(product.name || item.name);
-            const finalPrice = variant ? Math.max(0, Number(variant.price || basePrice)) : basePrice;
-            const unit = String(product.unit || item.unit || 'Unidad').trim();
-            orderItems.push({
-              productId: item.id,
-              name: finalName,
-              price: Number(finalPrice.toFixed(2)),
-              qty: item.qty,
-              unit,
-              subtotal: Number((finalPrice * item.qty).toFixed(2)),
-              variants: variant?.selections || null
-            });
-            if (currentStock !== null) {
-              transaction.update(productReference, {
-                stock: currentStock - item.qty,
-                lastOrderId: orderReference.id,
-                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-              });
-            }
-          }
-          const orderTotal = orderItems.reduce((sum, item) => sum + item.subtotal, 0);
-          transaction.set(orderReference, {
-            customer: String(customerName).trim(),
-            customerPhone: String(customerPhone || '').trim() || null,
-            items: orderItems,
-            total: Number(orderTotal.toFixed(2)),
-            itemCount: orderItems.reduce((sum, item) => sum + item.qty, 0),
-            status: 'pending',
-            paymentMethod: window.KioscoFinalImprovements?.getCheckoutExtras?.().paymentMethod || window.KioscoUpgrades?.getSelectedPaymentMethod?.() || 'cash',
-            paymentGroup: window.KioscoFinalImprovements?.getCheckoutExtras?.().paymentGroup || null,
-            paymentProofExpected: Boolean(window.KioscoFinalImprovements?.getCheckoutExtras?.().paymentProofExpected),
-            notes: String(notes || '').trim().slice(0, 300) || null,
-            deliveryType: deliveryType || 'pickup',
-            deliveryAddress: String(address || '').trim() || null,
-            scheduledDate: scheduledDate || null,
-            scheduledTime: scheduledTime || null,
-            location: gpsCoords || null,
-            source: 'web',
-            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-          });
-        });
-        Cart.clear();
-        return orderReference.id;
-      } finally {
-        state.checkoutBusy = false;
-      }
-    };
-    Cart.__kioscoSystemPatched = true;
+    // Cart owns validation, variants and checkout; never replace its transaction here.
+    if (window.Cart) Cart.__kioscoSystemPatched = true;
   }
 
   function syncVariantCartWithProducts() {
@@ -6482,8 +6312,7 @@ const I18n = (() => {
   }
 
   function getProductDisplayImage(product) {
-    return getInlineProductImages(product)[0]
-      || String(product?.resolvedImageUrl || product?.imageUrl || '').trim();
+    return KioscoCore.productImage(product);
   }
 
   function patchInlineProductImages() {
@@ -6495,7 +6324,7 @@ const I18n = (() => {
       const source = getProductDisplayImage(product);
       if (!source) return;
       const wrap = card.querySelector('.prod-img-wrap');
-      if (!wrap) return;
+      if (!wrap || wrap.dataset.failedSource === source) return;
       let image = wrap.querySelector('img.prod-img');
       if (!image) {
         wrap.querySelector('.prod-img-placeholder')?.remove();
@@ -6505,7 +6334,7 @@ const I18n = (() => {
         image.decoding = 'async';
         wrap.prepend(image);
       }
-      if (image.src !== source) image.src = source;
+      if (image.getAttribute('src') !== source) image.src = source;
       image.alt = String(product?.name || 'Producto');
     });
 
@@ -6516,7 +6345,7 @@ const I18n = (() => {
       const source = getProductDisplayImage(product);
       if (!source) return;
       const wrap = card.querySelector('.card-img-wrap');
-      if (!wrap) return;
+      if (!wrap || wrap.dataset.failedSource === source) return;
       let image = wrap.querySelector('img');
       if (!image) {
         wrap.replaceChildren();
@@ -6525,7 +6354,7 @@ const I18n = (() => {
         image.style.objectFit = 'cover';
         wrap.append(image);
       }
-      if (image.src !== source) image.src = source;
+      if (image.getAttribute('src') !== source) image.src = source;
       image.alt = String(product?.name || 'Producto');
     });
 
@@ -6533,9 +6362,9 @@ const I18n = (() => {
       const root = document.getElementById(id);
       if (!root) return;
       root.querySelectorAll('.cart-item[data-product-id]').forEach(row => {
-        const product = publicMap.get(String(row.dataset.productId || ''));
+        const product = publicMap.get(String(row.dataset.productId || '').split('::')[0]);
         const source = getProductDisplayImage(product);
-        if (!source) return;
+        if (!source || row.dataset.failedSource === source) return;
         let image = row.querySelector('img.cart-item-img');
         if (!image) {
           row.querySelector('.cart-item-img-ph')?.remove();
@@ -6546,7 +6375,7 @@ const I18n = (() => {
           image.loading = 'lazy';
           row.prepend(image);
         }
-        if (image.src !== source) image.src = source;
+        if (image.getAttribute('src') !== source) image.src = source;
         image.alt = String(product?.name || 'Producto');
       });
     });
@@ -6729,7 +6558,7 @@ const I18n = (() => {
     if (!container) return;
     const row = document.createElement('div');
     row.className = 'kk-variant-row';
-    row.innerHTML = `<div><label class="form-label small">Nombre</label><input type="text" class="form-control form-control-sm kk-variant-name" placeholder="Sabor" value="${esc(variant.name || '')}"></div><div><label class="form-label small">Opciones separadas por comas</label><input type="text" class="form-control form-control-sm kk-variant-options" placeholder="Fresa, Vainilla, Chocolate" value="${esc(Array.isArray(variant.options) ? variant.options.join(', ') : '')}"></div><div><label class="form-label small">Precio adicional</label><input type="number" min="0" step="0.10" class="form-control form-control-sm kk-variant-extra" value="${Number(variant.extraPrice || 0)}"></div><button type="button" class="btn btn-outline-danger btn-sm kk-remove-variant" title="Eliminar variante"><i class="bi bi-trash"></i></button>`;
+    row.innerHTML = `<div><label class="form-label small">Nombre</label><input type="text" class="form-control form-control-sm kk-variant-name" placeholder="Sabor" value="${esc(variant.name || '')}"></div><div><label class="form-label small">Opciones separadas por comas</label><input type="text" class="form-control form-control-sm kk-variant-options" placeholder="Fresa, Vainilla, Chocolate" value="${esc(Array.isArray(variant.options) ? variant.options.join(', ') : '')}"></div><div><label class="form-label small">Precio adicional</label><input type="number" min="0" step="0.01" class="form-control form-control-sm kk-variant-extra" value="${Number(variant.extraPrice || 0)}"></div><button type="button" class="btn btn-outline-danger btn-sm kk-remove-variant" title="Eliminar variante"><i class="bi bi-trash"></i></button>`;
     row.querySelector('.kk-remove-variant')?.addEventListener('click', () => row.remove());
     container.append(row);
   }
@@ -6907,8 +6736,7 @@ const I18n = (() => {
       await deleteFirestoreMediaByPath(imagePath);
       return;
     }
-    // Las URL externas no pertenecen al sistema y nunca se eliminan físicamente.
-    // Las imágenes antiguas de otros proveedores se conservan por compatibilidad.
+    try { await KioscoImages.remove(imagePath, imageUrl); } catch (error) { notify(error.message, 'warning'); }
   }
 
   async function saveProductEnhanced(event) {
@@ -6920,12 +6748,14 @@ const I18n = (() => {
     const stockRaw = document.getElementById('productStock')?.value.trim() || '';
     const discount = Number(document.getElementById('productDiscount')?.value || 0);
     const enteredImageUrl = document.getElementById('productImageUrl')?.value.trim() || '';
-    if (!name) return notify('El nombre es obligatorio', 'danger');
+    if (enteredImageUrl && !KioscoCore.safeImageUrl(enteredImageUrl, { inline: false })) return notify('La URL de imagen no es valida.', 'warning');
+    if (!name || name.length > 120) return notify('Ingresa un nombre de hasta 120 caracteres.', 'danger');
+    if ((document.getElementById('productDesc')?.value || '').length > 3000) return notify('La descripcion admite hasta 3000 caracteres.', 'warning');
     if (window.auth?.currentUser) {
       const action = id ? 'edit' : 'create';
       if (!permissionFor('products', action)) return notify('No tienes permiso para guardar productos.', 'warning');
     }
-    if (!Number.isFinite(price) || price < 0) return notify('Precio inválido', 'danger');
+    if (!document.getElementById('productPrice')?.value.trim() || !Number.isFinite(price) || price < 0 || price > 10000000) return notify('Precio invalido', 'danger');
     if (stockRaw !== '' && (!Number.isInteger(Number(stockRaw)) || Number(stockRaw) < 0)) return notify('Stock inválido', 'danger');
     if (!Number.isFinite(discount) || discount < 0 || discount > 100) return notify('El descuento debe estar entre 0 y 100', 'danger');
     if (enteredImageUrl && document.getElementById('kkImageError')?.classList.contains('show')) return notify('No se pudo cargar la imagen. Verifica el URL.', 'danger');
@@ -6956,12 +6786,14 @@ const I18n = (() => {
       button.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Guardando';
     }
 
+    let pendingUpload = null;
+    let committed = false;
     try {
       const data = {
         name,
         description: document.getElementById('productDesc')?.value.trim() || '',
         emoji: document.getElementById('productEmoji')?.value.trim() || null,
-        price,
+        price: KioscoCore.money(price),
         stock: stockRaw === '' ? null : Number(stockRaw),
         unit: document.getElementById('productUnit')?.value || 'Unidad',
         discountPercent: discount,
@@ -6975,7 +6807,7 @@ const I18n = (() => {
       const oldMediaPath = String(existing?.imagePath || '');
       const existingInlineImages = getInlineProductImages(existing);
 
-      if (state.removeProductImageRequested) {
+      if (state.removeProductImageRequested && !state.selectedProductFile && !enteredImageUrl) {
         data.images = [];
         data.imagePath = null;
         data.imageUrl = null;
@@ -6990,7 +6822,13 @@ const I18n = (() => {
         data.imageOriginalName = null;
         data.imageOriginalType = null;
         data.imageOriginalBytes = null;
+      } else if (state.selectedProductFile && window.KIOSCO_UPGRADE_CONFIG?.imageStorage === 'firebase-storage') {
+        const uploaded = await KioscoImages.upload(state.selectedProductFile, reference.id);
+        pendingUpload = uploaded;
+        data.images = [];
+        Object.assign(data, uploaded);
       } else if (state.selectedProductFile) {
+        KioscoImages.setProgress(null, 'Optimizando imagen');
         const optimized = await optimizeImageForFirestore(state.selectedProductFile, 'product');
         data.images = [optimized.dataUrl];
         data.imagePath = null;
@@ -7006,7 +6844,7 @@ const I18n = (() => {
         data.imageOriginalName = optimized.originalName;
         data.imageOriginalType = optimized.originalType || null;
         data.imageOriginalBytes = optimized.originalBytes;
-      } else if (enteredImageUrl) {
+      } else if (enteredImageUrl && enteredImageUrl !== String(existing?.imageUrl || '')) {
         data.images = [];
         data.imagePath = null;
         data.imageUrl = enteredImageUrl;
@@ -7080,13 +6918,15 @@ const I18n = (() => {
         await reference.set(data);
       }
 
+      committed = true;
+      KioscoImages.setProgress(100, 'Imagen y producto guardados');
       // Limpieza de una imagen antigua creada por los parches anteriores en /media.
       // Las nuevas imágenes de producto ya no crean documentos en esa colección.
       if (oldMediaPath.startsWith('firestore-media:') && data.imagePath !== oldMediaPath) {
         await deleteFirestoreMediaByPath(oldMediaPath);
       }
-      if (oldMediaPath && !oldMediaPath.startsWith('firestore-media:') && data.imagePath !== oldMediaPath && existing?.imageProvider === 'firebase-storage' && window.storage) {
-        storage.ref(oldMediaPath).delete().catch(() => {});
+      if ((oldMediaPath || existing?.imageUrl) && (data.imagePath !== oldMediaPath || data.imageUrl !== existing?.imageUrl)) {
+        try { await KioscoImages.remove(oldMediaPath, existing?.imageUrl); } catch (error) { notify(error.message, 'warning'); }
       }
 
       notify(id ? 'Producto actualizado' : 'Producto creado', 'success');
@@ -7099,6 +6939,9 @@ const I18n = (() => {
       }
       window.setTimeout(patchInlineProductImages, 80);
     } catch (error) {
+      if (!committed && pendingUpload) {
+        try { await KioscoImages.remove(pendingUpload.imagePath, pendingUpload.imageUrl); } catch (cleanupError) { notify(cleanupError.message, 'warning'); }
+      }
       notify(`No se pudo guardar el producto: ${error.message}`, 'danger');
     } finally {
       if (button) {
@@ -7253,21 +7096,9 @@ const I18n = (() => {
     }
   }
 
-  function validateExternalImageUrl(value) {
-    return new Promise((resolve, reject) => {
-      let parsed;
-      try {
-        parsed = new URL(value);
-        if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('protocol');
-      } catch (error) {
-        reject(new Error('La dirección URL del logo no es válida.'));
-        return;
-      }
-      const image = new Image();
-      image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
-      image.onerror = () => reject(new Error('No se pudo cargar la imagen. Verifica el URL.'));
-      image.src = value;
-    });
+  async function validateExternalImageUrl(value) {
+    const image = await KioscoImages.load(value);
+    return { width: image.naturalWidth, height: image.naturalHeight };
   }
 
   async function savePrimaryAppearanceFirestore(event) {
@@ -7609,7 +7440,7 @@ const I18n = (() => {
     if (product && [...product.options].some(option => option.value === String(state.offer.productId || ''))) product.value = String(state.offer.productId || '');
     if (price) price.value = state.offer.offerPrice ?? '';
     if (text) text.value = state.offer.bannerText || '';
-    if (end) end.value = state.offer.endTime || '';
+    if (end) { const value = toDate(state.offer.endTime); end.value = value ? new Date(value.getTime() - value.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''; }
   }
 
   async function saveOfferAdmin(event) {
@@ -7619,14 +7450,14 @@ const I18n = (() => {
     const endTime = document.getElementById('kkOfferEnd')?.value || '';
     if (!productId) return notify('Selecciona un producto para la oferta', 'warning');
     if (!Number.isFinite(offerPrice) || offerPrice < 0) return notify('Precio de oferta inválido', 'warning');
-    if (!endTime) return notify('Selecciona la hora de fin', 'warning');
+    if (!endTime || !Number.isFinite(new Date(endTime).getTime())) return notify('Selecciona una hora de fin valida', 'warning');
     try {
       await db.collection(COLL.config).doc('offer').set({
         active: Boolean(document.getElementById('kkOfferActive')?.checked),
         productId,
-        offerPrice,
+        offerPrice: KioscoCore.money(offerPrice),
         bannerText: document.getElementById('kkOfferText')?.value.trim() || 'Oferta del día',
-        endTime,
+        endTime: new Date(endTime).toISOString(),
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
       }, { merge: true });
       notify('Oferta del día guardada', 'success');
@@ -7687,7 +7518,8 @@ const I18n = (() => {
     const section = document.createElement('div');
     section.id = 'kkStaffPermissions';
     section.className = 'mt-3';
-    section.innerHTML = `<h6 class="mb-2"><i class="bi bi-shield-check me-2"></i>Permisos de acceso</h6><div class="kk-permissions-grid">
+    document.getElementById('staffPhone')?.removeAttribute('required');
+    section.innerHTML = `<div class="mb-3"><label class="form-label" for="kkStaffUid">UID de Firebase (para acceso por correo)</label><input class="form-control" id="kkStaffUid" maxlength="128" autocomplete="off"><div class="form-text">Crea la cuenta en Firebase Authentication y copia su UID. El telefono es opcional con UID.</div></div><h6 class="mb-2"><i class="bi bi-shield-check me-2"></i>Permisos de acceso</h6><div class="kk-permissions-grid">
       ${permissionGroup('General', [['dashboard','Dashboard (ver)'],['orders','Pedidos (ver y gestionar)'],['cash','Caja (ver y operar)'],['expenses','Gastos (ver y registrar)'],['schedule','Horario (ver y editar)'],['staff','Personal (ver)'],['audit','Auditoría (ver)'],['appearance','Apariencia (ver y editar)']])}
       ${permissionGroup('Productos', [['products.view','Ver'],['products.create','Crear'],['products.edit','Editar'],['products.delete','Eliminar']])}
       ${permissionGroup('Categorías', [['categories.view','Ver'],['categories.create','Crear'],['categories.edit','Editar'],['categories.delete','Eliminar']])}
@@ -7725,21 +7557,28 @@ const I18n = (() => {
     const digits = normalizePhone(document.getElementById('staffPhone')?.value || '');
     const phone = digits ? `+51${digits}` : '';
     const role = document.getElementById('staffRole')?.value || 'employee';
-    if (digits.length !== 9) return notify('Teléfono inválido', 'danger');
+    const uid = document.getElementById('kkStaffUid')?.value.trim() || '';
+    if (!name || name.length > 120) return notify('Ingresa un nombre de hasta 120 caracteres.', 'warning');
+    if ((digits && !/^9\d{8}$/.test(digits)) || (!digits && !uid)) return notify('Ingresa un UID de Firebase o un telefono valido.', 'danger');
+    if (uid && !/^[a-zA-Z0-9_-]{1,128}$/.test(uid)) return notify('UID invalido.', 'warning');
     const permissions = role === 'admin' ? clonePermissions(fullPermissions) : readStaffPermissionInputs();
     try {
       const ref = db.collection(COLL.config).doc('staff');
       const doc = await ref.get();
       const members = doc.exists && Array.isArray(doc.data().members) ? [...doc.data().members] : [];
-      const editIndex = Number(document.getElementById('staffForm')?.dataset.kkEditIndex);
+      const rawIndex = document.getElementById('staffForm')?.dataset.kkEditIndex;
+      const editIndex = rawIndex === undefined || rawIndex === '' ? -1 : Number(rawIndex);
       const editing = Number.isInteger(editIndex) && editIndex >= 0 && editIndex < members.length;
-      const duplicate = members.findIndex((member, index) => String(member.phone || '') === phone && (!editing || index !== editIndex));
+      const duplicate = members.findIndex((member, index) => ((phone && String(member.phone || '') === phone) || (uid && member.uid === uid)) && (!editing || index !== editIndex));
       if (duplicate >= 0) return notify('Ese teléfono ya está registrado', 'warning');
-      const member = { name, phone, role, permissions };
+      const member = { name, phone, uid, role, permissions };
       if (editing) members[editIndex] = member;
       else members.push(member);
       const phones = [...new Set(members.map(item => String(item.phone || '').trim()).filter(Boolean))];
-      await ref.set({ members, phones, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+      const permissionsByPhone = Object.fromEntries(members.filter(item => item.phone).map(item => [String(item.phone), item.role === 'admin' ? clonePermissions(fullPermissions) : clonePermissions(item.permissions)]));
+      const uids = [...new Set(members.map(item => String(item.uid || '').trim()).filter(Boolean))];
+      const permissionsByUid = Object.fromEntries(members.filter(item => item.uid).map(item => [String(item.uid), item.role === 'admin' ? clonePermissions(fullPermissions) : clonePermissions(item.permissions)]));
+      await ref.set({ members, phones, permissionsByPhone, uids, permissionsByUid, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
       notify(editing ? 'Personal actualizado' : 'Personal agregado', 'success');
       bootstrap.Modal.getInstance(document.getElementById('staffModal'))?.hide();
       const form = document.getElementById('staffForm');
@@ -7754,7 +7593,7 @@ const I18n = (() => {
   async function decorateStaffTable() {
     ensureStaffPermissionsEditor();
     const table = document.getElementById('staffTable');
-    if (!table || !window.db) return;
+    if (!table || !window.db || !window.Auth?.hasAdministrativeAccess()) return;
     try {
       const doc = await db.collection(COLL.config).doc('staff').get();
       const members = doc.exists && Array.isArray(doc.data().members) ? doc.data().members : [];
@@ -7784,6 +7623,7 @@ const I18n = (() => {
     document.getElementById('staffName').value = member.name || '';
     document.getElementById('staffPhone').value = normalizePhone(member.phone || '');
     document.getElementById('staffRole').value = member.role || 'employee';
+    if (document.getElementById('kkStaffUid')) document.getElementById('kkStaffUid').value = member.uid || '';
     setStaffPermissionInputs(member.role === 'admin' ? fullPermissions : member.permissions);
     bootstrap.Modal.getOrCreateInstance(document.getElementById('staffModal')).show();
   }
@@ -7860,7 +7700,7 @@ const I18n = (() => {
 
   async function loadBlockedClients() {
     const body = document.getElementById('kkBlockedClientsBody');
-    if (!body || !window.db) return;
+    if (!body || !window.db || !window.Auth?.hasAdministrativeAccess()) return;
     try {
       const snapshot = await db.collection('blocked_clients').get();
       const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => toDate(b.blockedAt) - toDate(a.blockedAt));
@@ -7961,7 +7801,7 @@ const I18n = (() => {
     const name = Auth.getClientName?.() || '';
     if (!name || !window.db) return;
     try {
-      const snapshot = await db.collection(COLL.orders).where('customer', '==', name).get();
+      const snapshot = await db.collection(COLL.orders).where('ownerId', '==', (await Auth.ensureClient()).uid).get();
       const orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => toDate(b.createdAt) - toDate(a.createdAt)).slice(0, 20);
       window.setTimeout(() => {
         const cards = [...container.querySelectorAll('article.card')];
@@ -7988,12 +7828,11 @@ const I18n = (() => {
   }
 
   function addOrderItemToCart(item, product) {
-    const quantity = Math.max(1, Math.trunc(Number(item.qty || 1)));
-    if (String(item.name || '') !== String(product.name || '') || Number(item.price) !== Number(product.price)) {
-      state.variantCart[product.id] = { name: item.name || product.name, price: Number(item.price ?? product.price), selections: Array.isArray(item.variants) ? item.variants : [], extraPrice: Math.max(0, Number(item.price ?? product.price) - Number(product.price || 0)) };
-      writeJson(KEYS.variantCart, state.variantCart);
-    }
-    window.Cart?.add?.({ ...product, name: item.name || product.name, price: Number(item.price ?? product.price) }, quantity);
+    const quantity = Math.max(1, Math.min(999, Math.trunc(Number(item.qty || 1))));
+    const selections = Array.isArray(item.variants) ? item.variants : [];
+    try { KioscoCore.priceFor(product, selections); }
+    catch { openVariantModal(product); return false; }
+    return Boolean(window.Cart?.add?.({ ...product, variantSelections: selections }, quantity));
   }
 
   function reorderPreviousOrder(order) {
@@ -8151,7 +7990,7 @@ const I18n = (() => {
       try {
         await db.collection(COLL.products).doc(productId).delete();
         if (String(existing.imagePath || '').startsWith('firestore-media:')) await deleteFirestoreMediaByPath(existing.imagePath);
-        else if (existing.imagePath && existing.imageProvider === 'firebase-storage' && window.storage) storage.ref(existing.imagePath).delete().catch(() => {});
+        else { try { await KioscoImages.remove(existing.imagePath, existing.imageUrl); } catch (error) { notify(error.message, 'warning'); } }
         notify('Producto eliminado', 'info');
       } catch (error) {
         notify(`No se pudo eliminar el producto: ${error.message}`, 'danger');
@@ -8200,7 +8039,7 @@ const I18n = (() => {
   }
 
   function initAdminDynamicEnhancements() {
-    ensureAppearancePanel();
+    updatePrimaryAppearanceHelp();
     removeLegacyMediaUi();
     patchAdminProductDelete();
     ensureStaffPermissionsEditor();
@@ -8214,7 +8053,7 @@ const I18n = (() => {
 
   function bindAdminEnhancementEvents() {
     window.addEventListener('admin:products-updated', () => {
-      refreshAdminProductSelects();
+      window.Admin?.refreshProductSelects?.();
       applyPermissionsToAdmin();
       window.setTimeout(patchInlineProductImages, 0);
     });
@@ -8298,7 +8137,7 @@ const I18n = (() => {
   }
 
   function init() {
-    console.info('[Kiosco] imagenes Base64 inline + mantenimiento | 1.27.2');
+    console.info('[Kiosco] imagenes Base64 inline + mantenimiento | 1.27.3');
     hardenUrlPrivacy();
     initSplash();
     initLocalPreferences();
@@ -8332,11 +8171,12 @@ const I18n = (() => {
   }
 
   window.KIOSCO_SYSTEM_STORAGE = 'product-inline-base64';
-  window.KIOSCO_SYSTEM_BUILD = '1.27.2';
+  window.KIOSCO_SYSTEM_BUILD = '1.27.3';
   patchAuthAccess();
 
   window.KioscoSystem = Object.freeze({
     init,
+    can: permissionFor,
     applyCatalogEnhancements,
     loadSessions,
     loadBlockedClients,
@@ -8345,6 +8185,7 @@ const I18n = (() => {
     uploadFirestoreImage,
     optimizeImageForFirestore,
     getProductDisplayImage,
+    isBlockedClient,
     sanitizeUrlForPrivacy
   });
 
@@ -8356,7 +8197,7 @@ const I18n = (() => {
 'use strict';
 
 (() => {
-  const VERSION = '1.27.2';
+  const VERSION = '1.27.3';
   const LOW_STOCK_LIMIT = 5;
   const JS_QR_CDN = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js';
   const JSPDF_CDN = 'https://unpkg.com/jspdf@4.2.1/dist/jspdf.umd.min.js';
@@ -8622,7 +8463,7 @@ const I18n = (() => {
     body.innerHTML = list.map(product => {
       const stock = stockValue(product) ?? 0;
       return `<tr>
-        <td><div class="d-flex align-items-center gap-2"><div class="kk-stock-thumb">${productImage(product) ? `<img src="${esc(productImage(product))}" alt="">` : '<i class="bi bi-box-seam"></i>'}</div><div><strong>${esc(product.name)}</strong><div class="small text-body-secondary">S/ ${Number(product.price || 0).toFixed(2)}</div></div></div></td>
+        <td><div class="d-flex align-items-center gap-2"><div class="kk-stock-thumb">${productImage(product) ? `<img src="${esc(productImage(product))}" alt="">` : '<i class="bi bi-box-seam"></i>'}</div><div><strong>${esc(product.name)}</strong><div class="small text-body-secondary">S/ ${KioscoCore.basePrice(product).toFixed(2)}</div></div></div></td>
         <td>${esc(categoryName(product.categoryId))}</td>
         <td><span class="fw-bold ${stock === 0 ? 'text-danger' : 'text-warning'}">${stock}</span></td>
         <td>${stock === 0 ? '<span class="badge text-bg-danger">Sin stock</span>' : '<span class="badge text-bg-warning">Stock bajo</span>'}</td>
@@ -8773,14 +8614,23 @@ const I18n = (() => {
   }
 
   async function exportCatalogPdfRealtime(button) {
-    const products = [...currentProducts()].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'es'));
-    if (!products.length) return notify('No hay productos para exportar.', 'warning');
+    let products = [];
+    let missingImages = 0;
     const original = button?.innerHTML;
     if (button) {
       button.disabled = true;
       button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Generando PDF';
     }
     try {
+      const [freshProducts, freshCategories, freshOffer] = await Promise.all([
+        db.collection(COLL.products).get({ source: 'server' }),
+        db.collection(COLL.categories).get({ source: 'server' }),
+        db.collection(COLL.config).doc('offer').get({ source: 'server' })
+      ]);
+      KioscoCore.setOffer(freshOffer.exists ? freshOffer.data() : null);
+      products = freshProducts.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'es'));
+      state.categories = freshCategories.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      if (!products.length) throw new Error('No hay productos para exportar.');
       await loadScript(JSPDF_CDN, 'jspdf.jsPDF');
       const jsPDF = window.jspdf?.jsPDF;
       if (!jsPDF) throw new Error('No se pudo iniciar el generador PDF');
@@ -8813,7 +8663,8 @@ const I18n = (() => {
           doc.addPage();
           header();
         }
-        const imageData = await imageToJpegDataUrl(productImage(product));
+        const imageData = await KioscoImages.toDataUrl(KioscoCore.productImage(product));
+        if (!imageData) missingImages += 1;
         doc.setDrawColor(228);
         doc.roundedRect(margin, y, pageW - margin * 2, rowH - 2, 2, 2, 'S');
         if (imageData) {
@@ -8841,7 +8692,7 @@ const I18n = (() => {
         doc.setTextColor(0);
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(11);
-        doc.text(`${currency} ${Number(product.price || 0).toFixed(2)}`, pageW - margin - 3, y + 8, { align: 'right' });
+        doc.text(`${currency} ${KioscoCore.basePrice(product).toFixed(2)}`, pageW - margin - 3, y + 8, { align: 'right' });
         if (isLowStock(product)) {
           doc.setFontSize(7.5);
           doc.setTextColor(190, 80, 20);
@@ -8859,7 +8710,7 @@ const I18n = (() => {
         doc.text(`Pagina ${page} de ${totalPages}`, pageW - margin, pageH - 6, { align: 'right' });
       }
       doc.save(`catalogo-kiosco-${new Date().toISOString().slice(0, 10)}.pdf`);
-      notify(`Catalogo PDF generado con ${products.length} productos e imagenes actuales.`, 'success');
+      notify(`Catalogo: ${products.length} productos. ${missingImages} sin imagen disponible.`, missingImages ? 'warning' : 'success');
     } catch (error) {
       console.error('PDF catalogo:', error);
       notify(`No se pudo generar el catalogo PDF: ${error.message}`, 'danger');

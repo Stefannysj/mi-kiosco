@@ -1,4 +1,25 @@
 {
   "indexes": [],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "collectionGroup": "products",
+      "fieldPath": "images",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "products",
+      "fieldPath": "imageUrl",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "media",
+      "fieldPath": "data",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "paymentProofs",
+      "fieldPath": "imageData",
+      "indexes": []
+    }
+  ]
 }

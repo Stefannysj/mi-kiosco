@@ -44,7 +44,7 @@ function ranges(period) {
 }
 
 function isSale(order) {
-  return !['rejected', 'cancelled'].includes(String(order.status || '').toLowerCase());
+  return String(order.status || '').toLowerCase() === 'done';
 }
 
 function analyze(orders) {

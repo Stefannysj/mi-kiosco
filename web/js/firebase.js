@@ -20,11 +20,9 @@
       expenses: 'expenses' // KIOSCO_NINE:EXPENSES_COLLECTION
     };
     window.FS = firebase.firestore;
-    window.db.enablePersistence({ synchronizeTabs: true }).catch(error => {
-      if (!['failed-precondition', 'unimplemented'].includes(error?.code)) {
-        console.warn('Persistencia de Firestore:', error?.message || error);
-      }
-    });
+    // Memory-only Firestore cache avoids retaining private admin orders on shared devices.
+    // Cart persistence is handled explicitly by cart.js; offline writes are not queued.
+
   } catch (error) {
     console.error('Error al iniciar Firebase:', error?.message || error);
   }

@@ -5,10 +5,11 @@ const Notifications = (() => {
   let baseline = null; // timestamp when admin logged in
 
   function init() {
+    if (!window.Auth?.hasAdministrativeAccess()) return;
     active   = true;
     baseline = new Date();
     subscribe();
-    requestPermission();
+    // Permission is requested only by an explicit user action.
   }
 
   function stop() {
@@ -21,11 +22,10 @@ const Notifications = (() => {
     if (unsub) unsub();
     unsub = db.collection(COLL.orders)
       .where('status','==','pending')
-      .orderBy('createdAt','desc')
-      .limit(1)
+
       .onSnapshot(snap => {
         if (!active) return;
-        snap.docChanges().forEach(ch => {
+        snap.docChanges().sort((a, b) => KioscoCore.timestamp(a.doc.data().createdAt) - KioscoCore.timestamp(b.doc.data().createdAt)).forEach(ch => {
           if (ch.type !== 'added') return;
           const o  = { id:ch.doc.id, ...ch.doc.data() };
           const ts = o.createdAt?.toDate ? o.createdAt.toDate() : null;
@@ -35,7 +35,7 @@ const Notifications = (() => {
             browserNotif(o);
           }
         });
-      });
+      }, () => { stop(); });
   }
 
   function showAlert(o) {
@@ -46,7 +46,7 @@ const Notifications = (() => {
       <span class="alert-icon">🔔</span>
       <div>
         <p class="alert-title">¡Nuevo pedido!</p>
-        <p class="alert-sub">👤 ${o.customer||'Cliente'} · ${APP_CONFIG.currency} ${(o.total||0).toFixed(2)}</p>
+        <p class="alert-sub">👤 ${String(o.customer||'Cliente').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))} · ${APP_CONFIG.currency} ${Number(o.total||0).toFixed(2)}</p>
       </div>
       <button class="alert-close" aria-label="Cerrar">✕</button>`;
     document.body.appendChild(el);
@@ -79,8 +79,8 @@ const Notifications = (() => {
     if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
     try {
       new Notification(`🛍️ Nuevo pedido en ${APP_CONFIG.storeName}`, {
-        body:  `${o.customer||'Cliente'} · ${APP_CONFIG.currency} ${(o.total||0).toFixed(2)}`,
-        icon:  'icons/icon-192.svg',
+        body:  `${String(o.customer||'Cliente').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))} · ${APP_CONFIG.currency} ${Number(o.total||0).toFixed(2)}`,
+        icon:  'icons/icon-192.png',
         tag:   'new-order',
         renotify: true
       });

@@ -106,7 +106,9 @@ const Store = (() => {
       discountPercent: Math.max(0, Math.min(100, Number(data.discountPercent || 0))),
       imagePath: data.imagePath ? String(data.imagePath).trim() : null,
       imageUrl: data.imageUrl ? String(data.imageUrl).trim() : null,
-      resolvedImageUrl: null,
+      variants: KioscoCore.variants(data),
+      images: Array.isArray(data.images) ? data.images.map(KioscoCore.safeImageUrl).filter(Boolean) : [],
+      resolvedImageUrl: KioscoCore.productImage(data) || null,
       categoryId: normalizeId(data.categoryId) || null,
       subcategoryId: normalizeId(data.subcategoryId) || null,
       active: data.active !== false
@@ -114,7 +116,7 @@ const Store = (() => {
   }
 
   async function resolveProductImage(product) {
-    const legacyUrl = normalizeImageUrl(product.imageUrl);
+    const legacyUrl = KioscoCore.productImage(product) || normalizeImageUrl(product.imageUrl);
     if (legacyUrl) return { ...product, resolvedImageUrl: legacyUrl };
     if (!product.imagePath || !window.storage) return product;
 
@@ -618,7 +620,7 @@ const Store = (() => {
 
     const price = document.createElement('span');
     price.className = 'prod-price fw-bold';
-    price.textContent = `${formatMoney(product.price)} / ${product.unit}`;
+    price.textContent = `${formatMoney(KioscoCore.basePrice(product))} / ${product.unit}`;
 
     priceRow.append(price);
 

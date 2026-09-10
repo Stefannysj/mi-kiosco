@@ -5,14 +5,17 @@
 //  INVOICE — Boleta PDF
 // ══════════════════════════════════════════════════════════════════════════════
 const Invoice = (() => {
-  function generate(order) {
+  const escape = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  function generate(rawOrder = {}) {
+    const order = { ...rawOrder, total: Number(rawOrder.total) || 0 };
+    for (const key of ['id','customer','customerPhone','deliveryAddress','scheduledDate','scheduledTime']) order[key] = escape(order[key]);
     const date = order.createdAt?.toDate
       ? order.createdAt.toDate().toLocaleString('es-PE') : new Date().toLocaleString('es-PE');
-    const storeName = (typeof APP_CONFIG !== 'undefined' ? APP_CONFIG.storeName : null) || 'Kiosco';
+    const storeName = escape((typeof APP_CONFIG !== 'undefined' ? APP_CONFIG.storeName : null) || 'Kiosco');
     const rows = (order.items || []).map(i => `
       <tr>
-        <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0">${i.name}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;text-align:center">${i.qty}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0">${escape(i.name)}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;text-align:center">${Number(i.qty) || 0}</td>
         <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;text-align:right">S/ ${Number(i.price).toFixed(2)}</td>
         <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;text-align:right">S/ ${Number(i.subtotal || i.price * i.qty).toFixed(2)}</td>
       </tr>`).join('');
@@ -82,6 +85,7 @@ const Invoice = (() => {
     const blob = new Blob([html], { type: 'text/html' });
     const url  = URL.createObjectURL(blob);
     const win  = window.open(url, '_blank');
+    if (win) win.opener = null;
     if (!win) {
       const a = document.createElement('a');
       a.href = url; a.download = `boleta-${(order.id || Date.now().toString()).slice(-6)}.html`;
@@ -97,78 +101,9 @@ const Invoice = (() => {
 //  EXCEL EXPORT
 // ══════════════════════════════════════════════════════════════════════════════
 const ExcelExport = (() => {
-  async function exportXLSX(period) {
-    // Load SheetJS dynamically
-    if (!window.XLSX) {
-      await new Promise((res, rej) => {
-        const s = document.createElement('script');
-        s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
-        s.onload = res; s.onerror = rej;
-        document.head.appendChild(s);
-      });
-    }
-
-    showToast('Generando Excel…', 'info');
-
-    const snap = await db.collection(COLL.orders).orderBy('createdAt', 'desc').get();
-    const all  = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-    const now   = new Date();
-    const start = new Date();
-    if (period === 'day')   { start.setHours(0,0,0,0); }
-    else if (period === 'week')  { start.setDate(now.getDate() - now.getDay()); start.setHours(0,0,0,0); }
-    else if (period === 'month') { start.setDate(1); start.setHours(0,0,0,0); }
-
-    const orders = all.filter(o => {
-      if (!o.createdAt) return false;
-      const t = o.createdAt.toDate ? o.createdAt.toDate() : new Date(o.createdAt);
-      return t >= start;
-    });
-
-    const labels   = { day: 'Hoy', week: 'Esta semana', month: 'Este mes' };
-    const statusLb = { pending: 'Pendiente', done: 'Completado', rejected: 'Rechazado' };
-
-    // Sheet 1: Orders
-    const ordersData = [
-      ['ID', 'Cliente', 'Teléfono', 'Dirección', 'Tipo entrega', 'Fecha programada', 'Productos', 'Total', 'Estado', 'Fecha pedido']
-    ];
-    orders.forEach(o => {
-      const items = (o.items || []).map(i => `${i.name} x${i.qty}`).join(' | ');
-      const date  = o.createdAt?.toDate ? o.createdAt.toDate().toLocaleString('es-PE') : '';
-      ordersData.push([
-        (o.id || '').slice(-8),
-        o.customer || '', o.customerPhone || '',
-        o.deliveryAddress || '',
-        o.deliveryType === 'delivery' ? 'Delivery' : 'Recojo en tienda',
-        o.scheduledDate ? `${o.scheduledDate} ${o.scheduledTime || ''}` : '',
-        items, o.total || 0,
-        statusLb[o.status] || o.status, date
-      ]);
-    });
-
-    // Sheet 2: Summary
-    const revenue = orders.filter(o => o.status !== 'rejected').reduce((s, o) => s + (o.total || 0), 0);
-    const summaryData = [
-      ['Métrica', 'Valor'],
-      ['Período', labels[period] || period],
-      ['Total pedidos', orders.length],
-      ['Completados',   orders.filter(o => o.status === 'done').length],
-      ['Pendientes',    orders.filter(o => o.status === 'pending').length],
-      ['Rechazados',    orders.filter(o => o.status === 'rejected').length],
-      ['Ingresos totales', revenue],
-      ['Ticket promedio', orders.length ? +(revenue / orders.length).toFixed(2) : 0]
-    ];
-
-    const wb  = XLSX.utils.book_new();
-    const ws1 = XLSX.utils.aoa_to_sheet(ordersData);
-    const ws2 = XLSX.utils.aoa_to_sheet(summaryData);
-    ws1['!cols'] = [10,15,14,22,16,18,40,10,12,20].map(w => ({ wch: w }));
-    ws2['!cols'] = [22,18].map(w => ({ wch: w }));
-    XLSX.utils.book_append_sheet(wb, ws1, 'Pedidos');
-    XLSX.utils.book_append_sheet(wb, ws2, 'Resumen');
-    XLSX.writeFile(wb, `kiosco-${period}-${new Date().toISOString().slice(0,10)}.xlsx`);
-    showToast('Excel descargado 📊', 'success');
+  async function exportXLSX() {
+    if (!window.Auth?.hasAdministrativeAccess()) return;
+    return Dashboard.exportOrders(undefined, { period: Dashboard.getPeriod(), filePrefix: 'kiosco', lockKey: 'legacy-dashboard' });
   }
-
   return { exportXLSX };
 })();

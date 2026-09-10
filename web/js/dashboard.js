@@ -59,9 +59,10 @@ const Dashboard = (() => {
       if (!button || button.dataset.exportBound === 'true') return;
       button.dataset.exportBound = 'true';
       button.addEventListener('click', () => {
-        const list = filterByPeriod(orders, selectedPeriod);
+        const activePeriod = period;
+        const list = filterByPeriod(orders, activePeriod);
         exportOrders(list, {
-          period: selectedPeriod,
+          period: activePeriod,
           button,
           filePrefix: 'kiosco'
         });
@@ -110,46 +111,13 @@ const Dashboard = (() => {
     return Number.isNaN(date.getTime()) ? null : date;
   }
 
-  function getPeriodRange(selectedPeriod, baseDate = new Date()) {
-    const start = new Date(baseDate);
-    const end = new Date(baseDate);
-
-    if (selectedPeriod === 'day') {
-      start.setHours(0, 0, 0, 0);
-      end.setTime(start.getTime());
-      end.setDate(end.getDate() + 1);
-      return { start, end };
-    }
-
-    if (selectedPeriod === 'week') {
-      const day = start.getDay();
-      const daysFromMonday = day === 0 ? 6 : day - 1;
-      start.setDate(start.getDate() - daysFromMonday);
-      start.setHours(0, 0, 0, 0);
-      end.setTime(start.getTime());
-      end.setDate(end.getDate() + 7);
-      return { start, end };
-    }
-
-    start.setDate(1);
-    start.setHours(0, 0, 0, 0);
-    end.setTime(start.getTime());
-    end.setMonth(end.getMonth() + 1);
-    return { start, end };
-  }
-
-  function filterByPeriod(list, selectedPeriod) {
-    const { start, end } = getPeriodRange(selectedPeriod);
-    return list.filter(order => {
-      const createdAt = toDate(order.createdAt);
-      return createdAt && createdAt >= start && createdAt < end;
-    });
-  }
+  function getPeriodRange(selectedPeriod, baseDate = new Date()) { return KioscoCore.periodRange(selectedPeriod, baseDate); }
+  function filterByPeriod(list, selectedPeriod) { return KioscoCore.filterPeriod(list, selectedPeriod); }
 
   function renderStats() {
     const list = filterByPeriod(orders, period);
     const revenue = list
-      .filter(order => order.status !== 'rejected')
+      .filter(order => order.status === 'done')
       .reduce((sum, order) => sum + Number(order.total || 0), 0);
 
     setText('dashRevenue', `${getCurrency()} ${revenue.toFixed(2)}`);
@@ -164,6 +132,7 @@ const Dashboard = (() => {
 
   function renderLowStockStats() {
     const lowStock = products.filter(product => {
+      if (product.stock == null || product.stock === '') return false;
       const stock = Number(product.stock);
       return Number.isFinite(stock) && stock >= 0 && stock <= 5
         && (product.active !== false || stock === 0);
@@ -330,15 +299,15 @@ const Dashboard = (() => {
 
       let key;
       if (selectedPeriod === 'day') {
-        key = `${String(createdAt.getHours()).padStart(2, '0')}h`;
+        key = `${String(KioscoCore.limaDate(createdAt).getUTCHours()).padStart(2, '0')}h`;
       } else if (selectedPeriod === 'week') {
-        key = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'][createdAt.getDay()];
+        key = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'][KioscoCore.limaDate(createdAt).getUTCDay()];
       } else {
-        key = String(createdAt.getDate());
+        key = String(KioscoCore.limaDate(createdAt).getUTCDate());
       }
 
       if (!salesMap.has(key)) return;
-      if (order.status !== 'rejected') {
+      if (order.status === 'done') {
         salesMap.set(key, salesMap.get(key) + Number(order.total || 0));
       }
       ordersMap.set(key, ordersMap.get(key) + 1);
@@ -354,7 +323,7 @@ const Dashboard = (() => {
   async function ensureExcelLibrary() {
     if (window.XLSX) return;
     if (!excelScriptPromise) {
-      excelScriptPromise = loadScript('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
+      excelScriptPromise = loadScript('https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js');
     }
     await excelScriptPromise;
   }
@@ -364,7 +333,7 @@ const Dashboard = (() => {
   }
 
   async function exportOrders(list, options = {}) {
-    const selectedPeriod = options.period || 'day';
+    const selectedPeriod = options.period || period;
     const lockKey = options.lockKey || `${selectedPeriod}:${options.filePrefix || 'kiosco'}`;
     const button = options.button || null;
 
@@ -379,6 +348,11 @@ const Dashboard = (() => {
     }
 
     try {
+      if (!options.filePrefix || options.filePrefix === 'kiosco') {
+        const fresh = await db.collection(COLL.orders).get({ source: 'server' });
+        orders = fresh.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        list = filterByPeriod(orders, selectedPeriod);
+      }
       await ensureExcelLibrary();
 
       const statusLabels = {
@@ -411,7 +385,7 @@ const Dashboard = (() => {
       });
 
       const revenue = list
-        .filter(order => order.status !== 'rejected')
+        .filter(order => order.status === 'done')
         .reduce((sum, order) => sum + Number(order.total || 0), 0);
 
       const summary = [
@@ -486,8 +460,16 @@ const Dashboard = (() => {
     }));
   }
 
+  function destroy() {
+    unsubscribeOrders?.(); unsubscribeProducts?.();
+    unsubscribeOrders = null; unsubscribeProducts = null;
+    clearInterval(refreshTimer); orders = []; products = []; initialized = false;
+    salesChart?.destroy(); ordersChart?.destroy(); salesChart = null; ordersChart = null;
+    renderStats();
+  }
+
   return {
-    init,
+    init, destroy,
     refresh,
     getPeriodRange,
     filterByPeriod,

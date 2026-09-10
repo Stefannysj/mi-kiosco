@@ -2,10 +2,10 @@
   "name": "kiosco-api",
   "version": "1.0.0",
   "private": true,
-  "description": "Backend serverless gratuito para Kiosco",
+  "description": "Backend opcional de Mi Kiosco",
   "main": "api/notify.js",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.16.0"
   },
   "scripts": {
     "dev": "vercel dev",

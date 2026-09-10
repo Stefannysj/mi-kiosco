@@ -1,0 +1,111 @@
+/* Layout corrections shared by the store and administration. */
+:root { --kiosco-search-offset: 0px; }
+[hidden] { display: none !important; }
+.products-main, .admin-main, .admin-content, .admin-section,
+.prod-card, .admin-product-card, .cart-item, .modal-body { min-width: 0; }
+.products-header, #kkProductToolbar {
+  position: sticky;
+  top: var(--kiosco-search-offset);
+  z-index: 1020;
+  background: var(--app-bg, var(--bs-body-bg));
+  border-bottom: 1px solid var(--app-border, var(--bs-border-color));
+  padding-block: .65rem;
+  box-shadow: 0 6px 12px rgb(0 0 0 / 5%);
+}
+.products-header { flex-wrap: wrap; }
+.products-header .search-wrap { flex: 1 1 220px; min-width: 0; }
+#kkProductToolbar .input-group { flex-wrap: nowrap; }
+#kkAdminProductSearch { min-width: 0; }
+#productsGrid > *, #adminProductsGrid > * { min-width: 0; }
+.prod-card, .admin-product-card { max-width: 100%; overflow: hidden; }
+.prod-card .prod-name, .admin-product-name, .cart-item-name,
+.order-customer, .modal-title { overflow-wrap: anywhere; }
+.prod-card img, .admin-product-card img { max-width: 100%; object-fit: contain; }
+.modal-dialog { width: auto; max-width: min(var(--bs-modal-width, 500px), calc(100vw - 1rem)); }
+.modal-lg { --bs-modal-width: 800px; }
+.modal-xl { --bs-modal-width: 1140px; }
+.modal-content { max-width: 100%; max-height: calc(100dvh - 1rem); }
+.modal-body { overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
+.modal-body img, .modal-body canvas { max-width: 100%; }
+.modal-body pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.modal-footer { flex-wrap: wrap; gap: .4rem; }
+.offcanvas { --bs-offcanvas-width: min(420px, 100vw); }
+#cartOffcanvas .offcanvas-body { min-height: 0; overflow: hidden; }
+#cartItemsListMobile { overflow-wrap: anywhere; }
+#cartFooterMobile { padding-bottom: max(1rem, env(safe-area-inset-bottom)) !important; }
+#adminNavMobile .nav-link { min-height: 44px; display: flex; align-items: center; gap: .5rem; }
+.table-responsive { max-width: 100%; }
+.img-load-failed { display: flex; align-items: center; justify-content: center; min-height: 72px; background: var(--app-surface-soft); color: var(--app-muted); }
+@media (max-width: 991.98px) {
+  :root { --kiosco-search-offset: var(--header-h, 64px); }
+  /* Override the old horizontal sidebar which ignored Bootstrap's d-none. */
+  #page-admin .admin-sidebar.d-none { display: none !important; }
+  .admin-layout { display: block !important; }
+  .products-main, .admin-main { height: auto; overflow: visible; }
+  .products-header, #kkProductToolbar { scroll-margin-top: var(--header-h); }
+  .products-main { padding-top: .35rem; }
+  .site-header { top: 0; }
+  #adminNavMobile { width: 100%; }
+  .admin-content .d-flex { min-width: 0; }
+}
+@media (max-width: 575.98px) {
+  .site-header .logo-text { max-width: 32vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .site-header .header-actions { margin-left: auto; flex-shrink: 0; }
+  .products-header { gap: .45rem; }
+  .products-header .search-wrap { flex-basis: auto; }
+  .products-header h2 { font-size: 1rem; }
+  #productsGrid > [class*="col-"] { width: 50%; }
+  #adminProductsGrid > [class*="col-"] { width: 100%; }
+  .prod-card .card-body { padding: .65rem; }
+  .prod-card .btn { white-space: normal; }
+  .modal-dialog { margin: .5rem; }
+  .modal-body { padding: .85rem; }
+  .modal-body .input-group { min-width: 0; }
+  .modal-body .form-control, .modal-body .form-select { min-width: 0; font-size: 16px; }
+  #kkProductToolbar .card-body { padding-inline: .6rem !important; }
+  .order-status-btns { flex-wrap: wrap; }
+  .order-items { min-width: 0; width: 100%; }
+}
+@media (max-width: 359.98px) {
+  #productsGrid > [class*="col-"] { width: 100%; }
+  .site-header .logo-text { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+
+/* Product grids adapt to their container (sidebar and cart consume desktop width). */
+#productsGrid:not(.kk-list-mode), #adminProductsGrid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(210px, 100%), 1fr));
+  gap: 1rem; margin-inline: 0;
+}
+#productsGrid:not(.kk-list-mode) > [class*="col-"], #adminProductsGrid > [class*="col-"] {
+  width: auto; max-width: 100%; padding-inline: 0; margin-top: 0;
+}
+#productsGrid > .store-status, #productsGrid > .col-12:only-child { grid-column: 1 / -1; }
+.prod-price { white-space: nowrap; font-size: 1rem; }
+.prod-price small { white-space: normal; }
+#productsGrid .prod-card .card-body > .d-flex { flex-wrap: wrap; gap: .25rem; }
+@media (max-width: 575.98px) {
+  #productsGrid:not(.kk-list-mode) { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
+  #adminProductsGrid { grid-template-columns: minmax(0, 1fr); }
+  .prod-price { font-size: .88rem; }
+}
+@media (max-width: 359.98px) {
+  #productsGrid:not(.kk-list-mode) { grid-template-columns: minmax(0, 1fr); }
+}
+/* Bootstrap row-cols gives .col a percentage width. A CSS-grid cell needs 100%. */
+#productsGrid:not(.kk-list-mode) > .col,
+#adminProductsGrid > .col,
+#adminProductsGrid > [class*="col-"] {
+  width: 100%; max-width: 100%; padding-inline: 0; margin-top: 0;
+}
+#productsGrid.kk-list-mode { display: grid; grid-template-columns: minmax(0, 1fr); gap: .75rem; margin-inline: 0; }
+#productsGrid.kk-list-mode > .col { padding-inline: 0; margin-top: 0; }
+@media (max-width: 575.98px) {
+  #productsGrid .prod-card .btn-add { white-space: nowrap; }
+  #productsGrid .prod-name { overflow-wrap: normal; word-break: normal; }
+}
+
+#productsGrid .prod-card .mt-auto > .d-flex:first-child { flex-wrap: wrap; gap: .25rem !important; }
+#productsGrid .prod-card .mt-auto > .d-flex:first-child > small { white-space: normal; overflow-wrap: anywhere; }

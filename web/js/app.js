@@ -117,10 +117,11 @@ const App = (() => {
       initializedModules.add(name);
       return;
     }
-    if (typeof moduleObject.refresh === 'function') moduleObject.refresh();
+    moduleObject.init();
   }
 
   function showPage(page) {
+    if (page === 'admin' && !window.Auth?.hasAdministrativeAccess()) page = 'store';
     const target = AppDom.byId(`page-${page}`);
     if (!target) {
       console.warn(`Página no encontrada: ${page}`);
@@ -286,7 +287,7 @@ function initAuthModal() {
     event.target.value = sanitizePhone(event.target.value);
   });
 
-  AppDom.bind(AppDom.byId('clientLoginForm'), 'submit', event => {
+  AppDom.bind(AppDom.byId('clientLoginForm'), 'submit', async event => {
     event.preventDefault();
     const name = AppDom.byId('clientName')?.value.trim() || '';
     const phone = sanitizePhone(AppDom.byId('clientPhone')?.value);
@@ -303,12 +304,33 @@ function initAuthModal() {
       return;
     }
 
-    Auth.loginClient(name, phone);
+    try { await Auth.loginClient(name, phone); } catch (error) { showToast(error.message, 'danger'); return; }
     AppDom.modal('authModal')?.hide();
     prefillOrderCustomer(name, phone);
     App.updateProfileButton(false);
     App.showPage('store');
     showToast(`Hola, ${name}`, 'success');
+  });
+
+  const usePhone = window.KIOSCO_UPGRADE_CONFIG?.adminAuthMode === 'phone';
+  if (AppDom.byId('adminEmailForm')) AppDom.byId('adminEmailForm').hidden = usePhone;
+  if (AppDom.byId('adminPhoneAccess')) AppDom.byId('adminPhoneAccess').hidden = !usePhone;
+  AppDom.bind(AppDom.byId('adminEmailForm'), 'submit', async event => {
+    event.preventDefault();
+    const button = AppDom.byId('adminEmailSubmit');
+    if (button.disabled) return;
+    setBusy(button, true, 'Ingresando...', 'Ingresar al panel');
+    try {
+      const user = await Auth.signInEmail(AppDom.byId('adminEmail').value, AppDom.byId('adminPassword').value);
+      const allowed = await Auth.checkIsAdmin(user);
+      Auth.setAdministrativeAccess(user, allowed);
+      if (!allowed) { await Auth.logout(); throw new Error('Esta cuenta no tiene acceso al panel.'); }
+      AppDom.byId('adminPassword').value = '';
+      AppDom.modal('authModal')?.hide();
+      App.showPage('admin');
+      showToast('Sesion administrativa iniciada', 'success');
+    } catch (error) { showToast(error.message, 'danger'); }
+    finally { setBusy(button, false, '', 'Ingresar al panel'); }
   });
 
   AppDom.bind(AppDom.byId('sendCodeBtn'), 'click', async () => {
@@ -350,6 +372,8 @@ function initAuthModal() {
     try {
       const user = await Auth.verifyCode(code);
       const isAdmin = await Auth.checkIsAdmin(user);
+        if (auth.currentUser?.uid !== user.uid) return;
+        Auth.setAdministrativeAccess(user, isAdmin);
 
       if (!isAdmin) {
         await Auth.logout();
@@ -384,7 +408,8 @@ function initAuthModal() {
 
   if (!window.__kioscoAuthObserver) {
     window.__kioscoAuthObserver = Auth.onAuthChange(async user => {
-      if (!user) {
+      if (!user || user.isAnonymous) {
+        Auth.setAdministrativeAccess(user, false);
         if (Auth.getRole() === 'admin') localStorage.removeItem('kk_role');
         if (App.currentPage === 'admin') App.showPage('store');
         return;
@@ -392,6 +417,8 @@ function initAuthModal() {
 
       try {
         const isAdmin = await Auth.checkIsAdmin(user);
+        if (auth.currentUser?.uid !== user.uid) return;
+        Auth.setAdministrativeAccess(user, isAdmin);
         if (!isAdmin) {
           await Auth.logout();
           return;
@@ -439,7 +466,7 @@ function initProfileModal() {
     event.target.value = sanitizePhone(event.target.value);
   });
 
-  AppDom.bind(AppDom.byId('saveProfileBtn'), 'click', () => {
+  AppDom.bind(AppDom.byId('saveProfileBtn'), 'click', async () => {
     if (typeof Auth === 'undefined') return;
     const name = AppDom.byId('profileName')?.value.trim() || '';
     const phone = sanitizePhone(AppDom.byId('profilePhone')?.value);
@@ -456,7 +483,7 @@ function initProfileModal() {
       return;
     }
 
-    Auth.loginClient(name, phone);
+    try { await Auth.loginClient(name, phone); } catch (error) { showToast(error.message, 'danger'); return; }
     prefillOrderCustomer(name, phone);
     App.updateProfileButton(false);
     AppDom.modal('profileModal')?.hide();
@@ -489,7 +516,7 @@ async function loadProfileOrders() {
   container.innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Cargando</span></div></div>';
 
   try {
-    const snapshot = await db.collection(COLL.orders).where('customer', '==', name).get();
+    const snapshot = await db.collection(COLL.orders).where('ownerId', '==', (await Auth.ensureClient()).uid).get();
     const orders = snapshot.docs
       .map(documentSnapshot => ({ id: documentSnapshot.id, ...documentSnapshot.data() }))
       .sort((left, right) => {
@@ -1164,12 +1191,6 @@ async function bootstrapApplication() {
   initAdminNavigation();
   initResponsiveUi();
 
-  if (typeof Auth !== 'undefined') {
-    Auth.loadAdminPhones().catch(error => {
-      console.warn('No se pudo precargar la lista de administradores:', error?.message || error);
-    });
-  }
-
   loadGlobalBranding();
   registerServiceWorker();
 
@@ -1179,10 +1200,7 @@ async function bootstrapApplication() {
   App.showPage('store');
   renderMobileCart();
 
-  const firebaseUser = typeof auth !== 'undefined' ? auth.currentUser : null;
-  if (typeof Auth !== 'undefined' && Auth.getRole() === 'admin' && firebaseUser) {
-    App.showPage('admin');
-  }
+  if (Auth.hasAdministrativeAccess()) App.showPage('admin');
 }
 
 document.addEventListener('DOMContentLoaded', () => {

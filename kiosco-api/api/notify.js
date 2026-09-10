@@ -1,6 +1,7 @@
 'use strict';
 
 const { getAdmin, getDb } = require('./_lib/firebaseAdmin');
+const { requireUser, assertOrderOwner } = require('./_lib/auth');
 const { applyCors, json, readJson, requireMethod, safeError } = require('./_lib/http');
 const { asDate, assertFreshOrder } = require('./_lib/orders');
 
@@ -15,7 +16,9 @@ module.exports = async function handler(req, res) {
   if (!requireMethod(req, res, 'POST')) return;
 
   let orderRef;
+  let claimedByThisRequest = false;
   try {
+    const user = await requireUser(req);
     const { orderId } = await readJson(req);
     if (!orderId || !/^[A-Za-z0-9_-]{10,128}$/.test(String(orderId))) {
       return json(res, 400, { error: 'A valid orderId is required' });
@@ -36,6 +39,7 @@ module.exports = async function handler(req, res) {
       }
 
       const order = orderSnap.data();
+      assertOrderOwner(user, order);
       assertFreshOrder(order);
 
       if (order.notificationSentAt) {
@@ -60,6 +64,7 @@ module.exports = async function handler(req, res) {
       return { state: 'claimed', order, tokens };
     });
 
+    claimedByThisRequest = payload.state === 'claimed';
     if (payload.state === 'sent') {
       return json(res, 200, { ok: true, alreadySent: true, sent: 0 });
     }
@@ -78,8 +83,11 @@ module.exports = async function handler(req, res) {
     const body = `${payload.order.customer || 'Cliente'} · S/ ${Number(payload.order.total || 0).toFixed(2)}`;
     const publicUrl = (process.env.PUBLIC_STORE_URL || 'https://mi-kiosco-c7313.web.app').replace(/\/$/, '');
 
-    const response = await getAdmin().messaging().sendEachForMulticast({
-      tokens: payload.tokens,
+    const response = { successCount: 0, failureCount: 0, responses: [] };
+    // FCM accepts at most 500 registration tokens per multicast call.
+    for (let start = 0; start < payload.tokens.length; start += 500) {
+      const currentResponse = await getAdmin().messaging().sendEachForMulticast({
+      tokens: payload.tokens.slice(start, start + 500),
       data: {
         type: 'new-order',
         orderId: String(orderId),
@@ -94,6 +102,11 @@ module.exports = async function handler(req, res) {
         fcmOptions: { link: `${publicUrl}/#admin-orders` }
       }
     });
+
+      response.successCount += currentResponse.successCount;
+      response.failureCount += currentResponse.failureCount;
+      response.responses.push(...currentResponse.responses);
+    }
 
     const invalidTokens = [];
     response.responses.forEach((item, index) => {
@@ -136,7 +149,7 @@ module.exports = async function handler(req, res) {
       invalidTokensRemoved: invalidTokens.length
     });
   } catch (error) {
-    if (orderRef) {
+    if (orderRef && claimedByThisRequest) {
       try {
         await orderRef.update({ notificationClaimedAt: getAdmin().firestore.FieldValue.delete() });
       } catch { /* preserve the original error */ }

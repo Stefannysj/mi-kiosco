@@ -37,9 +37,11 @@ function createPublicToken() {
 }
 
 function publicReceiptUrl(req, orderId, token) {
-  const forwardedProto = String(req.headers['x-forwarded-proto'] || 'https').split(',')[0].trim();
+  const forwardedProto = 'https';
   const forwardedHost = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
-  const base = forwardedHost ? `${forwardedProto}://${forwardedHost}` : '';
+  const configured = String(process.env.PUBLIC_API_URL || '').replace(/\/$/, '');
+  const safeHost = /^[a-z0-9.-]+(?::[0-9]+)?$/i.test(forwardedHost) ? forwardedHost : '';
+  const base = configured || (safeHost ? `${forwardedProto}://${safeHost}` : '');
   return `${base}/api/boleta?orderId=${encodeURIComponent(orderId)}&token=${encodeURIComponent(token)}`;
 }
 
@@ -91,6 +93,7 @@ async function reserveReceipt(db, orderId) {
     const number = existing.number
       ? Number(existing.number)
       : Math.max(1, Math.trunc(Number(config.nextNumber || 1)));
+    if (!Number.isSafeInteger(number) || number < 1 || number > 99999999) throw Object.assign(new Error('Correlativo de recibo no valido.'), { statusCode: 409 });
     const publicToken = existing.publicToken || createPublicToken();
     const issuedAt = existing.issuedAt || getAdmin().firestore.FieldValue.serverTimestamp();
 
@@ -137,7 +140,7 @@ async function readPublicReceipt(db, orderId, token) {
   const valid = expected.length > 0
     && expected.length === received.length
     && crypto.timingSafeEqual(expected, received)
-    && billing.public === true;
+    && billing.public === true && order.status !== 'rejected';
   if (!valid) {
     throw Object.assign(new Error('Enlace de recibo inválido o vencido'), { statusCode: 403 });
   }
@@ -149,23 +152,36 @@ async function readPublicReceipt(db, orderId, token) {
   };
 }
 
-async function fetchLogo(url) {
-  if (!/^https:\/\//i.test(String(url || ''))) return null;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 4000);
-  try {
-    const response = await fetch(url, { signal: controller.signal, redirect: 'follow' });
-    if (!response.ok) return null;
-    const contentType = response.headers.get('content-type') || '';
-    if (!/^image\/(png|jpeg|jpg)$/i.test(contentType)) return null;
-    const arrayBuffer = await response.arrayBuffer();
-    if (arrayBuffer.byteLength > 2 * 1024 * 1024) return null;
-    return Buffer.from(arrayBuffer);
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timeout);
+async function fetchLogo(value) {
+  const maximum = 2 * 1024 * 1024;
+  const dataMatch = String(value || '').match(/^data:image\/(?:png|jpe?g);base64,([a-z0-9+/=]+)$/i);
+  if (dataMatch) {
+    if (dataMatch[1].length > maximum * 1.4) return null;
+    const buffer = Buffer.from(dataMatch[1], 'base64');
+    return buffer.length <= maximum ? buffer : null;
   }
+  let url;
+  try { url = new URL(value); } catch { return null; }
+  // Explicit host allowlist. External arbitrary URLs remain usable in the browser;
+  // the server does not act as a proxy to untrusted or internal destinations.
+  const allowedHosts = new Set(['firebasestorage.googleapis.com', 'storage.googleapis.com', 'res.cloudinary.com']);
+  try { allowedHosts.add(new URL(process.env.PUBLIC_STORE_URL).hostname); } catch { /* optional */ }
+  for (const host of String(process.env.RECEIPT_LOGO_HOSTS || '').split(',')) if (host.trim()) allowedHosts.add(host.trim());
+  if (url.protocol !== 'https:' || url.username || url.password || !allowedHosts.has(url.hostname) || (url.port && url.port !== '443')) return null;
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(4000), redirect: 'error' });
+    if (!response.ok || !/^image\/(png|jpe?g)(?:;|$)/i.test(response.headers.get('content-type') || '')) return null;
+    if (Number(response.headers.get('content-length') || 0) > maximum) { await response.body?.cancel(); return null; }
+    const reader = response.body?.getReader(); if (!reader) return null;
+    const chunks = []; let length = 0;
+    while (true) {
+      const { done, value: chunk } = await reader.read(); if (done) break;
+      length += chunk.length;
+      if (length > maximum) { await reader.cancel(); return null; }
+      chunks.push(Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
+  } catch { return null; }
 }
 
 function drawCellText(doc, text, x, y, width, options = {}) {

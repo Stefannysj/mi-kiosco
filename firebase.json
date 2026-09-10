@@ -11,7 +11,6 @@
       "**/node_modules/**",
       "kiosco-api/**",
       "kiosco-app/**",
-      "docs/**",
       "scripts/**",
       "web-upgrade/**",
       "package.json",
@@ -65,10 +64,24 @@
             "value": "no-store"
           }
         ]
+      },
+      {
+        "source": "**",
+        "headers": [
+          {
+            "key": "X-Content-Type-Options",
+            "value": "nosniff"
+          },
+          {
+            "key": "Referrer-Policy",
+            "value": "strict-origin-when-cross-origin"
+          }
+        ]
       }
+    ],
+    "predeploy": [
+      "node scripts/build-config.mjs",
+      "node scripts/verify-package.mjs"
     ]
-  },
-  "storage": {
-    "rules": "storage.rules"
   }
 }

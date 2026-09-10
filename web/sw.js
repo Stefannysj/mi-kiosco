@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = 'kiosco-cache-20260827-1272';
+const APP_VERSION = 'kiosco-cache-20260910-1273';
 const CACHE_PREFIX = 'kiosco';
 const STATIC_CACHE = `${CACHE_PREFIX}-static-${APP_VERSION}`;
 const RUNTIME_CACHE = `${CACHE_PREFIX}-runtime-${APP_VERSION}`;
@@ -13,6 +13,10 @@ const APP_SHELL = [
   '/manifest.json',
   '/css/app.css',
   '/js/config.js',
+  '/js/core.js',
+  '/js/images.js',
+  '/js/qr-adapter.js',
+  '/css/responsive.css',
   '/js/firebase.js',
   '/js/auth.js',
   '/js/store.js',
@@ -84,7 +88,7 @@ self.addEventListener('fetch', event => {
   const url = new URL(request.url);
   if (!['http:', 'https:'].includes(url.protocol)) return;
 
-  if (NETWORK_ONLY_HOSTS.includes(url.hostname)) {
+  if (NETWORK_ONLY_HOSTS.includes(url.hostname) || url.pathname.startsWith('/api/') || url.searchParams.has('receiptToken') || request.headers.has('Authorization')) {
     event.respondWith(networkOnly(request));
     return;
   }
@@ -215,6 +219,7 @@ async function putInCache(cacheName, request, response) {
   if (!isCacheable(response)) return;
   const cache = await caches.open(cacheName);
   await cache.put(request, response);
+  if (cacheName === IMAGE_CACHE) { const keys = await cache.keys(); await Promise.all(keys.slice(0, Math.max(0, keys.length - 100)).map(key => cache.delete(key))); }
 }
 
 function isCacheable(response) {

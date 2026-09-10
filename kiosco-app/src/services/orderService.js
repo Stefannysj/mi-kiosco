@@ -4,39 +4,48 @@ import {
   getDoc,
   onSnapshot,
   query,
-  limit,
   runTransaction,
   serverTimestamp,
   setDoc,
   where
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, ensureClient } from './firebase';
+import Core from '../core.generated';
+import { publicConfig } from '../config.generated';
 
 export function subscribeProducts(onData, onError) {
-  return onSnapshot(collection(db, 'products'), snapshot => {
-    const products = snapshot.docs
-      .map(item => ({ id: item.id, ...item.data() }))
+  let products = [], timer = null, loaded = false;
+  const emit = () => { if (loaded) onData([...products]); };
+  const stopOffer = onSnapshot(doc(db, 'config', 'offer'), snapshot => {
+    const offer = snapshot.exists() ? snapshot.data() : null;
+    Core.setOffer(offer); clearTimeout(timer);
+    const remaining = Core.timestamp(offer?.endTime) - Date.now();
+    if (remaining > 0 && remaining < 2147483647) timer = setTimeout(emit, remaining + 20);
+    emit();
+  }, onError);
+  const stopProducts = onSnapshot(collection(db, 'products'), snapshot => {
+    loaded = true;
+    products = snapshot.docs.map(item => ({ id: item.id, ...item.data() }))
       .filter(item => item.active !== false)
       .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'es'));
-    onData(products);
+    emit();
   }, onError);
+  return () => { clearTimeout(timer); stopOffer(); stopProducts(); };
 }
 
 export function subscribeCustomerOrders(customer, phone, onData, onError) {
-  if (!customer?.trim()) {
-    onData([]);
-    return () => {};
-  }
-  const constraints = [where('customer', '==', customer.trim())];
-  if (phone?.trim()) constraints.push(where('customerPhone', '==', phone.trim()));
-  constraints.push(limit(30));
-  const ordersQuery = query(collection(db, 'orders'), ...constraints);
-  return onSnapshot(ordersQuery, snapshot => {
-    const orders = snapshot.docs
-      .map(item => ({ id: item.id, ...item.data() }))
-      .sort((a, b) => timestampMillis(b.createdAt) - timestampMillis(a.createdAt));
-    onData(orders);
-  }, onError);
+  let disposed = false;
+  let unsubscribe = null;
+  ensureClient().then(user => {
+    if (disposed) return;
+    const ordersQuery = query(collection(db, 'orders'), where('ownerId', '==', user.uid));
+    unsubscribe = onSnapshot(ordersQuery, snapshot => {
+      const orders = snapshot.docs.map(item => ({ id: item.id, ...item.data() }))
+        .sort((a, b) => timestampMillis(b.createdAt) - timestampMillis(a.createdAt));
+      onData(orders);
+    }, onError);
+  }).catch(error => { if (!disposed) onError?.(error); });
+  return () => { disposed = true; unsubscribe?.(); };
 }
 
 export async function getPaymentConfig() {
@@ -44,70 +53,58 @@ export async function getPaymentConfig() {
   return snapshot.exists() ? snapshot.data() : {};
 }
 
-export async function createOrder({ customer, phone, cart, paymentMethod, notes, paymentProof }) {
+export async function createOrder({ customer, phone = '', cart, paymentMethod = 'cash', notes = '', paymentProof }) {
+  const name = String(customer || '').trim();
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!name || name.length > 120) throw new Error('Ingresa un nombre de hasta 120 caracteres.');
+  if (digits && !/^9\d{8}$/.test(digits)) throw new Error('Ingresa un celular peruano de 9 digitos.');
+  if (!Array.isArray(cart) || !cart.length || cart.length > 100) throw new Error('El carrito debe tener entre 1 y 100 lineas.');
+  if (!['cash', 'card', 'yape', 'plin'].includes(paymentMethod)) throw new Error('Selecciona un medio de pago valido.');
+  if (paymentProof && (!/^data:image\/(png|jpe?g|webp);base64,/i.test(paymentProof.imageData || '') || paymentProof.imageData.length > 420000)) throw new Error('La imagen de pago no es valida o es demasiado grande.');
+  const user = await ensureClient();
   const orderReference = doc(collection(db, 'orders'));
-
+  const quantities = {};
+  for (const item of cart) {
+    const productId = String(item.productId || item.id || '').split('::')[0];
+    if (!productId || productId.includes('/') || !Number.isSafeInteger(item.qty) || item.qty < 1 || item.qty > 999) throw new Error('Hay un producto o cantidad no valido en el carrito.');
+    quantities[productId] = (quantities[productId] || 0) + item.qty;
+    if (quantities[productId] > 999) throw new Error('Un producto no puede superar 999 unidades.');
+  }
+  let createdOrder;
   await runTransaction(db, async transaction => {
-    const products = [];
-    for (const item of cart) {
-      const productReference = doc(db, 'products', item.id);
-      const productSnapshot = await transaction.get(productReference);
-      if (!productSnapshot.exists()) throw new Error(`El producto ${item.name} ya no existe.`);
-      products.push({ item, productReference, product: productSnapshot.data() || {} });
+    const offerSnapshot = await transaction.get(doc(db, 'config', 'offer'));
+    const liveOffer = offerSnapshot.exists() ? offerSnapshot.data() : null;
+    const products = new Map();
+    for (const productId of Object.keys(quantities)) {
+      const reference = doc(db, 'products', productId);
+      const snapshot = await transaction.get(reference);
+      if (!snapshot.exists()) throw new Error('Un producto ya no existe. Actualiza tu carrito.');
+      const product = snapshot.data();
+      if (product.active === false) throw new Error(`${product.name} no esta disponible.`);
+      const stock = product.stock == null || product.stock === '' ? null : Number(product.stock);
+      if (stock !== null && (!Number.isSafeInteger(stock) || stock < quantities[productId])) throw new Error(`Stock insuficiente para ${product.name}.`);
+      products.set(productId, { reference, product, stock });
     }
-
-    const items = [];
-    for (const entry of products) {
-      const { item, productReference, product } = entry;
-      if (product.active === false) throw new Error(`El producto ${item.name} no está disponible.`);
-
-      const quantity = Math.max(1, Math.trunc(Number(item.qty || 0)));
-      const rawPrice = Number(product.price ?? item.price ?? 0);
-      const price = Number.isFinite(rawPrice) && rawPrice >= 0 ? rawPrice : 0;
-      const rawStock = product.stock;
-      const hasStock = rawStock !== null && rawStock !== undefined && rawStock !== '' && Number.isFinite(Number(rawStock));
-      const stock = hasStock ? Math.max(0, Math.trunc(Number(rawStock))) : null;
-      if (stock !== null && stock < quantity) {
-        throw new Error(`Stock insuficiente para ${item.name}. Disponible: ${stock}.`);
-      }
-
-      items.push({
-        productId: item.id,
-        name: String(product.name || item.name),
-        price: Number(price.toFixed(2)),
-        qty: quantity,
-        unit: String(product.unit || item.unit || 'Unidad'),
-        subtotal: Number((price * quantity).toFixed(2))
-      });
-
-      if (stock !== null) {
-        transaction.update(productReference, {
-          stock: stock - quantity,
-          updatedAt: serverTimestamp()
-        });
-      }
-    }
-
-    const total = items.reduce((sum, item) => sum + item.subtotal, 0);
-    transaction.set(orderReference, {
-      customer: customer.trim(),
-      customerPhone: phone.trim() || null,
-      items,
-      total: Number(total.toFixed(2)),
-      itemCount: items.reduce((sum, item) => sum + item.qty, 0),
-      status: 'pending',
-      paymentMethod,
-      paymentGroup: ['yape', 'plin'].includes(paymentMethod) ? 'wallet' : paymentMethod,
-      paymentProofExpected: Boolean(paymentProof),
-      notes: notes.trim().slice(0, 300) || null,
-      deliveryType: 'pickup',
-      deliveryAddress: null,
-      scheduledDate: null,
-      scheduledTime: null,
-      source: 'expo',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
+    const items = cart.map(item => {
+      const productId = String(item.productId || item.id).split('::')[0];
+      const { product } = products.get(productId);
+      const variants = Array.isArray(item.variantSelections) ? item.variantSelections : [];
+      const price = Core.priceFor({ ...product, id: productId }, variants, liveOffer);
+      return { productId, name: `${product.name}${variants.length ? ' - ' + variants.join(' / ') : ''}`,
+        price, qty: item.qty, unit: product.unit || 'Unidad', variants,
+        subtotal: Core.cents(price) * item.qty / 100 };
     });
+    for (const [productId, { reference, stock, product }] of products) {
+      if (stock !== null) transaction.update(reference, { stock: stock - quantities[productId], lastOrderId: orderReference.id, stockReservations: { ...(product.stockReservations || {}), [orderReference.id]: quantities[productId] }, updatedAt: serverTimestamp() });
+    }
+    createdOrder = { ownerId: user.uid, customer: name, customerPhone: digits || null,
+      items, productQuantities: quantities, total: items.reduce((sum, item) => sum + Core.cents(item.subtotal), 0) / 100,
+      itemCount: items.reduce((sum, item) => sum + item.qty, 0), status: 'pending', paymentMethod,
+      paymentGroup: ['yape', 'plin'].includes(paymentMethod) ? 'wallet' : paymentMethod,
+      paymentProofExpected: Boolean(paymentProof), notes: String(notes).trim().slice(0, 300) || null,
+      deliveryType: 'pickup', deliveryAddress: null, scheduledDate: null, scheduledTime: null,
+      source: 'expo', createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+    transaction.set(orderReference, createdOrder);
   });
 
   let proofWarning = '';
@@ -129,16 +126,17 @@ export async function createOrder({ customer, phone, cart, paymentMethod, notes,
   }
 
   void notifyBackend(orderReference.id);
-  return { orderId: orderReference.id, proofWarning };
+  return { orderId: orderReference.id, proofWarning, order: { ...createdOrder, id: orderReference.id, createdAt: new Date() } };
 }
 
 async function notifyBackend(orderId) {
-  const baseUrl = process.env.EXPO_PUBLIC_KIOSCO_API_URL;
+  const baseUrl = publicConfig.apiBaseUrl;
   if (!baseUrl || baseUrl.includes('REEMPLAZAR')) return;
   try {
     await fetch(`${baseUrl.replace(/\/$/, '')}/api/notify`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await (await ensureClient()).getIdToken()}` },
+      signal: AbortSignal.timeout(10000),
       body: JSON.stringify({ orderId })
     });
   } catch (error) {
@@ -146,10 +144,4 @@ async function notifyBackend(orderId) {
   }
 }
 
-export function timestampMillis(value) {
-  if (!value) return 0;
-  if (typeof value.toMillis === 'function') return value.toMillis();
-  if (typeof value.toDate === 'function') return value.toDate().getTime();
-  const parsed = new Date(value).getTime();
-  return Number.isFinite(parsed) ? parsed : 0;
-}
+export function timestampMillis(value) { return Core.timestamp(value); }

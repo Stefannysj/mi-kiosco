@@ -1,22 +1,6 @@
 node_modules/
-*.log
-.DS_Store
-
-kiosco-api/.env
-kiosco-app/.env
-.kiosco-receipts-backup-*
-.kiosco-final-backup-*
-
-.kiosco-*-backup-*/
-npm-audit-force.diff
-.firebase/
 .expo/
 .env
 .env.*
-Thumbs.db
 !.env.example
-
-# Local logs
-firebase-debug.log
-firebase-debug.*.log
 *.log

@@ -12,6 +12,8 @@
 (async function seedDemo() {
   if (!window.db) { console.error('Firebase no inicializado'); return; }
 
+  if (!window.Auth?.hasAdministrativeAccess() || !String(window.FIREBASE_CONFIG?.projectId || '').startsWith('demo-') || !confirm('Cargar datos demo en este proyecto de pruebas?')) return;
+
   console.log('🌱 Cargando datos de demostración...');
 
   // ── Categorías ────────────────────────────────────────────────────────────

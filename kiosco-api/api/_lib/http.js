@@ -32,13 +32,31 @@ function json(res, status, body) {
 }
 
 async function readJson(req) {
-  if (req.body && typeof req.body === 'object') return req.body;
-  if (typeof req.body === 'string') return JSON.parse(req.body || '{}');
-
-  const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  const raw = Buffer.concat(chunks).toString('utf8');
-  return raw ? JSON.parse(raw) : {};
+  const maximum = 2 * 1024 * 1024;
+  const fail = (statusCode, message) => { throw Object.assign(new Error(message), { statusCode }); };
+  let raw;
+  if (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) {
+    if (Array.isArray(req.body)) fail(400, 'Se esperaba un objeto JSON.');
+    if (Buffer.byteLength(JSON.stringify(req.body)) > maximum) fail(413, 'Solicitud demasiado grande.');
+    return req.body;
+  }
+  if (typeof req.body === 'string' || Buffer.isBuffer(req.body)) raw = String(req.body);
+  else {
+    const chunks = []; let length = 0;
+    for await (const chunk of req) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      length += buffer.length;
+      if (length > maximum) fail(413, 'Solicitud demasiado grande.');
+      chunks.push(buffer);
+    }
+    raw = Buffer.concat(chunks).toString('utf8');
+  }
+  if (Buffer.byteLength(raw) > maximum) fail(413, 'Solicitud demasiado grande.');
+  try {
+    const data = raw ? JSON.parse(raw) : {};
+    if (!data || typeof data !== 'object' || Array.isArray(data)) fail(400, 'Se esperaba un objeto JSON.');
+    return data;
+  } catch (error) { return fail(error.statusCode || 400, 'JSON no valido.'); }
 }
 
 function requireMethod(req, res, method) {
@@ -50,7 +68,7 @@ function requireMethod(req, res, method) {
 
 function safeError(error) {
   console.error(error);
-  return error instanceof Error ? error.message : 'Unexpected error';
+  return Number(error?.statusCode) >= 400 && Number(error?.statusCode) < 500 ? error.message : 'No se pudo completar la solicitud. Intenta nuevamente.';
 }
 
 module.exports = { applyCors, json, readJson, requireMethod, safeError };

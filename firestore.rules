@@ -1,193 +1,191 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    function hasPhone() {
-      return request.auth != null && request.auth.token.phone_number != null;
-    }
-
+    function signedIn() { return request.auth != null; }
+    function phone() { return signedIn() ? request.auth.token.get('phone_number', '') : ''; }
     function isAdmin() {
-      return hasPhone()
-        && exists(/databases/$(database)/documents/config/admin)
-        && get(/databases/$(database)/documents/config/admin).data.phones is list
-        && request.auth.token.phone_number in get(/databases/$(database)/documents/config/admin).data.phones;
+      return signedIn() && (
+        request.auth.token.get('admin', false) == true || (
+          exists(/databases/$(database)/documents/config/admin) && (
+            request.auth.uid in get(/databases/$(database)/documents/config/admin).data.get('uids', []) ||
+            (phone() != '' && phone() in get(/databases/$(database)/documents/config/admin).data.get('phones', []))
+          )
+        )
+      );
     }
-
     function isStaff() {
-      return hasPhone()
-        && exists(/databases/$(database)/documents/config/staff)
-        && get(/databases/$(database)/documents/config/staff).data.phones is list
-        && request.auth.token.phone_number in get(/databases/$(database)/documents/config/staff).data.phones;
+      return signedIn() && exists(/databases/$(database)/documents/config/staff) && (
+        request.auth.uid in get(/databases/$(database)/documents/config/staff).data.get('uids', []) ||
+        (phone() != '' && phone() in get(/databases/$(database)/documents/config/staff).data.get('phones', [])));
     }
-
-    function isAdminOrStaff() {
-      return isAdmin() || isStaff();
+    function staffPermissions() {
+      return get(/databases/$(database)/documents/config/staff).data.get('permissionsByUid', {}).get(request.auth.uid,
+        get(/databases/$(database)/documents/config/staff).data.get('permissionsByPhone', {}).get(phone(), {
+        'dashboard': true, 'orders': true, 'cash': true, 'expenses': true,
+        'schedule': false, 'staff': false, 'audit': false, 'appearance': false,
+        'products': {'view': true, 'create': false, 'edit': false, 'delete': false},
+        'categories': {'view': true, 'create': false, 'edit': false, 'delete': false}
+      }));
     }
-
-    function isSensitiveConfig(docId) {
-      return docId in ['admin', 'staff', 'media'];
+    function can(section) { return isAdmin() || (isStaff() && staffPermissions().get(section, false) == true); }
+    function canEdit(section, action) {
+      return isAdmin() || (isStaff() && staffPermissions().get(section, {}).get(action, false) == true);
     }
-
-    function isStockDecreaseLinkedToOrder() {
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stock', 'lastOrderId', 'updatedAt'])
-        && resource.data.stock is int
-        && request.resource.data.stock is int
-        && request.resource.data.stock >= 0
-        && request.resource.data.stock < resource.data.stock
-        && request.resource.data.lastOrderId is string
-        && request.resource.data.lastOrderId.size() > 5
-        && request.resource.data.lastOrderId.size() <= 128
-        && existsAfter(/databases/$(database)/documents/orders/$(request.resource.data.lastOrderId))
-        && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.lastOrderId)).data.status == 'pending';
+    function adminOrStaff() { return isAdmin() || isStaff(); }
+    function ownsOrder(data) { return signedIn() && data.get('ownerId', '') == request.auth.uid; }
+    function canReadOrders() { return isAdmin() || (isStaff() && (can('orders') || can('dashboard') || can('cash'))); }
+    function publicConfig(id) { return !(id in ['admin', 'staff', 'media']); }
+    function mayWriteConfig(id) {
+      return isAdmin() || (publicConfig(id) && (
+        (id in ['hours', 'schedule', 'settings'] && can('schedule')) ||
+        (id == 'billing' && (can('orders') || can('appearance'))) ||
+        (id in ['theme', 'branding', 'payments', 'offer', 'featured', 'maintenance'] && can('appearance'))
+      ));
     }
-
-    function isValidOrder() {
-      return request.resource.data.customer is string
-        && request.resource.data.customer.size() > 0
-        && request.resource.data.customer.size() <= 120
-        && request.resource.data.items is list
-        && request.resource.data.items.size() > 0
-        && request.resource.data.items.size() <= 100
-        && request.resource.data.total is number
-        && request.resource.data.total >= 0
-        && request.resource.data.total <= 10000000
-        && request.resource.data.status == 'pending';
+    function validOrder() {
+      let o = request.resource.data;
+      return ownsOrder(o) && o.keys().hasOnly([
+        'ownerId', 'customer', 'customerPhone', 'items', 'productQuantities', 'total', 'itemCount', 'status',
+        'paymentMethod', 'paymentGroup', 'paymentProofExpected', 'notes', 'deliveryType', 'deliveryAddress',
+        'scheduledDate', 'scheduledTime', 'location', 'source', 'createdAt', 'updatedAt'
+      ]) && o.customer is string && o.customer.size() > 0 && o.customer.size() <= 120
+        && o.items is list && o.items.size() > 0 && o.items.size() <= 100
+        && o.productQuantities is map && o.productQuantities.size() > 0 && o.productQuantities.size() <= 100
+        && o.total is number && o.total >= 0 && o.total <= 10000000
+        && o.itemCount is int && o.itemCount > 0 && o.itemCount <= 99900
+        && o.status == 'pending' && o.paymentMethod in ['cash', 'card', 'yape', 'plin']
+        && o.paymentProofExpected is bool && o.createdAt == request.time && o.updatedAt == request.time;
     }
-
-    match /config/{docId} {
-      allow read: if !isSensitiveConfig(docId) || isAdminOrStaff();
-      allow create, update: if (isSensitiveConfig(docId) && isAdmin())
-        || (!isSensitiveConfig(docId) && isAdminOrStaff());
+    function linkedStockDecrease(productId) {
+      let next = request.resource.data;
+      let orderPath = /databases/$(database)/documents/orders/$(next.lastOrderId);
+      return signedIn() && resource.data.get('active', true) != false
+        && next.diff(resource.data).affectedKeys().hasOnly(['stock', 'lastOrderId', 'stockReservations', 'updatedAt'])
+        && resource.data.stock is int && next.stock is int && next.stock >= 0 && next.stock < resource.data.stock
+        && next.lastOrderId is string && next.lastOrderId.size() > 5 && next.lastOrderId.size() <= 128
+        && next.stockReservations is map
+        && next.stockReservations.diff(resource.data.get('stockReservations', {})).affectedKeys().hasOnly([next.lastOrderId])
+        && !(next.lastOrderId in resource.data.get('stockReservations', {}))
+        && next.stockReservations.get(next.lastOrderId, 0) == resource.data.stock - next.stock
+        && next.updatedAt == request.time && !exists(orderPath) && existsAfter(orderPath)
+        && ownsOrder(getAfter(orderPath).data) && getAfter(orderPath).data.status == 'pending'
+        && getAfter(orderPath).data.productQuantities.get(productId, 0) == resource.data.stock - next.stock;
+    }
+    function orderInventoryTransition(productId) {
+      let next = request.resource.data;
+      let id = next.lastOrderId;
+      let orderPath = /databases/$(database)/documents/orders/$(id);
+      let before = get(orderPath).data;
+      let after = getAfter(orderPath).data;
+      let reserved = resource.data.get('stockReservations', {}).get(id, 0);
+      let verified = reserved > 0 ? reserved : before.get('inventoryCommitted', {}).get(productId, 0);
+      let qty = before.productQuantities.get(productId, 0);
+      return can('orders') && before.status != after.status && next.updatedAt == request.time
+        && next.diff(resource.data).affectedKeys().hasOnly(['stock', 'stockReservations', 'lastOrderId', 'updatedAt'])
+        && resource.data.stock is int && next.stock is int && next.stock >= 0
+        && next.stockReservations is map
+        && next.stockReservations.diff(resource.data.get('stockReservations', {})).affectedKeys().hasOnly([id])
+        && (
+          (after.status == 'rejected' && verified > 0 && next.stock == resource.data.stock + verified && !(id in next.stockReservations)) ||
+          (after.status == 'done' && before.status != 'rejected' && next.stock == resource.data.stock && !(id in next.stockReservations)) ||
+          (before.status == 'rejected' && after.status in ['pending', 'done'] && qty > 0 && qty <= 999 && next.stock == resource.data.stock - qty
+            && (after.status == 'pending' ? next.stockReservations.get(id, 0) == qty : !(id in next.stockReservations))) ||
+          (after.status == 'pending' && before.status == 'done' && verified > 0 && next.stock == resource.data.stock && next.stockReservations.get(id, 0) == verified)
+        );
+    }
+    match /config/{id} {
+      allow read: if publicConfig(id) || adminOrStaff();
+      allow create, update: if mayWriteConfig(id);
       allow delete: if isAdmin();
     }
-
     match /products/{productId} {
       allow read: if true;
-      allow create, delete: if isAdminOrStaff();
-      allow update: if isAdminOrStaff() || isStockDecreaseLinkedToOrder();
+      allow create: if canEdit('products', 'create');
+      allow update: if canEdit('products', 'edit') || linkedStockDecrease(productId) || orderInventoryTransition(productId);
+      allow delete: if canEdit('products', 'delete');
     }
-
     match /categories/{categoryId} {
       allow read: if true;
-      allow write: if isAdminOrStaff();
+      allow create: if canEdit('categories', 'create');
+      allow update: if canEdit('categories', 'edit');
+      allow delete: if canEdit('categories', 'delete');
     }
-
     match /orders/{orderId} {
-      allow create: if isValidOrder();
-      // Se mantiene lectura pública por compatibilidad con el historial de clientes actual.
-      // No guardar secretos, tokens ni credenciales dentro del documento del pedido.
-      allow read: if true;
-      allow update, delete: if isAdminOrStaff();
+      allow create: if validOrder();
+      allow read: if canReadOrders() || ownsOrder(resource.data);
+      allow update: if can('orders');
+      allow delete: if isAdmin();
     }
-
-    match /expenses/{expenseId} {
-      allow read, write: if isAdminOrStaff();
+    match /expenses/{id} { allow read: if can('expenses') || can('cash'); allow write: if can('expenses'); }
+    match /blocked_clients/{id} {
+      allow get: if signedIn();
+      allow list, write: if can('orders');
     }
-
-    match /blocked_clients/{clientId} {
-      // El checkout solo hace get() por ID hash/legado. No se permite listar públicamente.
-      allow get: if true;
-      allow list, create, update, delete: if isAdminOrStaff();
-    }
-
-    match /media/{mediaId} {
-      allow read: if isAdminOrStaff();
-      allow create, update: if isAdminOrStaff()
+    match /media/{id} {
+      allow read: if adminOrStaff();
+      allow create, update: if (can('appearance') || canEdit('products', 'edit') || canEdit('products', 'create'))
         && request.resource.data.keys().hasOnly([
-          'data', 'contentType', 'width', 'height', 'bytes',
-          'originalName', 'originalType', 'originalBytes',
+          'data', 'contentType', 'width', 'height', 'bytes', 'originalName', 'originalType', 'originalBytes',
           'kind', 'ownerId', 'createdAt', 'updatedAt', 'uploadedBy'
-        ])
-        && request.resource.data.data is string
-        && request.resource.data.data.matches('data:image/.*')
-        && request.resource.data.data.size() > 100
-        && request.resource.data.data.size() <= 240000
-        && request.resource.data.contentType is string
-        && request.resource.data.contentType.matches('image/.*')
-        && request.resource.data.width is int
-        && request.resource.data.width > 0
-        && request.resource.data.width <= 1600
-        && request.resource.data.height is int
-        && request.resource.data.height > 0
-        && request.resource.data.height <= 1600
-        && request.resource.data.bytes is int
-        && request.resource.data.bytes > 0
-        && request.resource.data.bytes <= 200000
-        && request.resource.data.kind in ['product', 'logo']
-        && request.resource.data.ownerId is string
-        && request.resource.data.ownerId.size() <= 128;
-      allow delete: if isAdminOrStaff();
+        ]) && request.resource.data.data is string && request.resource.data.data.matches('data:image/.*')
+        && request.resource.data.data.size() > 100 && request.resource.data.data.size() <= 240000
+        && request.resource.data.kind in ['product', 'logo'];
+      allow delete: if can('appearance') || canEdit('products', 'delete') || canEdit('products', 'edit');
     }
-
-
-    match /session_log/{sessionId} {
-      allow create: if isAuthenticated()
-        && request.auth.token.phone_number != null
-        && request.resource.data.keys().hasOnly([
-          'phone', 'loginAt', 'userAgent', 'platform', 'language', 'screenResolution'
-        ])
-        && request.resource.data.phone == request.auth.token.phone_number
-        && request.resource.data.userAgent is string
-        && request.resource.data.userAgent.size() <= 1024
-        && request.resource.data.platform is string
-        && request.resource.data.platform.size() <= 160
-        && request.resource.data.language is string
-        && request.resource.data.language.size() <= 32
-        && request.resource.data.screenResolution is string
-        && request.resource.data.screenResolution.size() <= 64;
-      allow read: if isAdminOrStaff();
+    match /session_log/{id} {
+      allow create: if adminOrStaff() && request.resource.data.keys().hasOnly([
+        'uid', 'phone', 'loginAt', 'userAgent', 'platform', 'language', 'screenResolution'
+      ]) && request.resource.data.get('uid', request.auth.uid) == request.auth.uid
+        && request.resource.data.get('phone', '') == phone()
+        && request.resource.data.userAgent is string && request.resource.data.userAgent.size() <= 1024;
+      allow read: if can('audit');
       allow update, delete: if false;
     }
-
     match /chats/{chatId} {
-      // Compatibilidad con el chat público actual. No usar esta colección para secretos.
-      allow read, write: if true;
+      function chatOwner() { return signedIn() && chatId == request.auth.uid; }
+      allow get: if can('orders') || chatOwner();
+      allow list: if can('orders');
+      allow create, update: if can('orders') || (chatOwner() && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.keys().hasOnly(['ownerId', 'lastMessage', 'lastSender', 'updatedAt', 'unreadAdmin'])
+        && request.resource.data.lastMessage is string && request.resource.data.lastMessage.size() <= 2000
+        && request.resource.data.lastSender == 'customer');
+      allow delete: if isAdmin();
       match /messages/{messageId} {
-        allow read, write: if true;
+        allow read: if can('orders') || chatOwner();
+        allow create: if can('orders') || (chatOwner() && request.resource.data.keys().hasOnly(['text', 'sender', 'createdAt'])
+          && request.resource.data.text is string && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 2000 && request.resource.data.sender == 'customer'
+          && request.resource.data.createdAt == request.time);
+        allow update, delete: if isAdmin();
       }
     }
-
-    match /audit_log/{auditId} {
-      allow create, read: if isAdminOrStaff();
+    match /audit_log/{id} {
+      allow create: if adminOrStaff();
+      allow read: if can('audit');
       allow update, delete: if false;
     }
-
     match /paymentProofs/{orderId} {
-      function linkedOrder() {
-        return get(/databases/$(database)/documents/orders/$(orderId)).data;
-      }
-
-      allow create: if (isAdminOrStaff() || (
-          request.auth == null
-          && exists(/databases/$(database)/documents/orders/$(orderId))
-          && linkedOrder().paymentProofExpected == true
-          && linkedOrder().paymentMethod == request.resource.data.paymentMethod
-        ))
-        && request.resource.data.keys().hasOnly([
-          'orderId', 'paymentMethod', 'imageData', 'fileName',
-          'contentType', 'originalType', 'encodedLength', 'createdAt'
-        ])
-        && request.resource.data.orderId == orderId
-        && request.resource.data.paymentMethod in ['card', 'yape', 'plin']
-        && request.resource.data.imageData is string
-        && request.resource.data.imageData.size() > 100
-        && request.resource.data.imageData.size() <= 420000
-        && request.resource.data.fileName is string
-        && request.resource.data.fileName.size() <= 120
-        && request.resource.data.contentType is string
-        && request.resource.data.contentType.matches('image/.*')
-        && request.resource.data.encodedLength is int
-        && request.resource.data.encodedLength > 100
-        && request.resource.data.encodedLength <= 420000;
-
-      allow read, update, delete: if isAdminOrStaff();
+      function linkedOrder() { return get(/databases/$(database)/documents/orders/$(orderId)).data; }
+      allow create: if (can('orders') || (ownsOrder(linkedOrder()) && linkedOrder().paymentProofExpected == true
+        && linkedOrder().paymentMethod == request.resource.data.paymentMethod))
+        && request.resource.data.keys().hasOnly(['orderId', 'paymentMethod', 'imageData', 'fileName', 'contentType', 'originalType', 'encodedLength', 'createdAt'])
+        && request.resource.data.orderId == orderId && request.resource.data.paymentMethod in ['card', 'yape', 'plin']
+        && request.resource.data.imageData is string && request.resource.data.imageData.matches('data:image/.*')
+        && request.resource.data.imageData.size() > 100 && request.resource.data.imageData.size() <= 420000
+        && request.resource.data.encodedLength == request.resource.data.imageData.size()
+        && request.resource.data.createdAt == request.time;
+      allow read: if can('orders') || ownsOrder(linkedOrder());
+      allow update, delete: if can('orders');
     }
-
-    match /{document=**} {
-      allow read, write: if false;
+    // Only explicit, non-enumerable, sanitized receipt projections are public.
+    match /public_receipts/{token} {
+      allow get: if can('orders') || (resource.data.billing.public == true && resource.data.status != 'rejected');
+      allow list: if can('orders');
+      allow create, update: if can('orders') && request.resource.data.keys().hasOnly([
+        'orderId', 'status', 'items', 'total', 'paymentMethod', 'billing', 'createdAt'
+      ]) && token.size() >= 32 && token == request.resource.data.billing.publicToken;
+      allow delete: if can('orders');
     }
+    match /{document=**} { allow read, write: if false; }
   }
 }

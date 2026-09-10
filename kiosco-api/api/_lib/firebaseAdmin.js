@@ -1,5 +1,6 @@
 'use strict';
 
+require('./env');
 const admin = require('firebase-admin');
 
 function readCredential() {
