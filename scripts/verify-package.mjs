@@ -51,7 +51,7 @@ const featuresSource = fs.readFileSync(path.join(root, 'web/js/features.js'), 'u
 const mobileStoreSource = fs.readFileSync(path.join(root, 'kiosco-app/src/screens/StoreScreen.jsx'), 'utf8');
 check(html.includes('id=\"adminPhonePasswordForm\"') && html.includes('id=\"adminPhone\"') && html.includes('id=\"adminPassword\"'), 'El acceso admin debe pedir celular y contrasena.');
 check(!html.includes('id=\"adminEmail\"') && !html.includes('recaptchaContainer') && !html.includes('adminCode'), 'El acceso admin no debe mostrar correo ni OTP/SMS.');
-check(authSource.includes('signInPhonePassword') && authSource.includes('phone.51'), 'Auth debe mapear celular+contrasena al alias tecnico de Firebase.');
+check(authSource.includes('signInPhonePassword') && authSource.includes('signInWithPhoneNumber') && authSource.includes('RecaptchaVerifier') && !authSource.includes('signInWithEmailAndPassword'), 'Auth debe usar Phone Authentication + reCAPTCHA para celular+contrasena.');
 check(/function productMatchesSearch\(product\)[\s\S]*?normalizeSearch\(product\.name \|\| ''\)\.includes\(searchQuery\)/.test(storeSource), 'La busqueda cliente debe usar solo el titulo del producto.');
 check(featuresSource.includes("const productTitle = normalize(product.name || '');") && !featuresSource.includes('Buscar por nombre, descripcion o categoria'), 'La busqueda admin debe usar solo el titulo del producto.');
 check(mobileStoreSource.includes("String(product.name || '').toLocaleLowerCase('es').includes(term)") && !mobileStoreSource.includes('[product.name, product.description]'), 'La busqueda movil debe usar solo el titulo del producto.');

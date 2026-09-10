@@ -9,7 +9,7 @@ Base: ZIP `mi-kiosco-main(1).zip` proporcionado por el usuario. Trabajo realizad
 | Configuración | Un `.env` raíz, generador con lista pública permitida, comandos de verificación reales y predeploy. |
 | Sintaxis | Validación de todos los JS propios y separación de JSX; referencias locales verificadas. |
 | Consultas | Sin `.orderBy()` en código productivo; ordenamiento local y filtros de periodo en horario de Lima. |
-| Acceso | UID/claims/telefonía verificada para privilegios; cliente anónimo; acceso administrativo visible por celular + contraseña mediante alias técnico Email/Password compatible con Spark; limpieza de suscripciones al salir. |
+| Acceso | UID/claims/telefonía verificada para privilegios; cliente anónimo; acceso administrativo visible por celular + contraseña usando Phone Authentication, reCAPTCHA y código fijo de número de prueba; limpieza de suscripciones al salir. |
 | Permisos | Pedidos por propietario, configuraciones privadas, UID del personal y revocación de acceso; proyecciones públicas de recibos sin datos de contacto. |
 | Carrito | Líneas independientes por variante, stock compartido, redondeo en centavos, persistencia y renderizado desktop/offcanvas coherentes. |
 | Precios | Descuento sobre el precio base y adicionales de variante separados; oferta vigente sin sobreprecio; checkout relee productos y oferta. Repetir pedido usa variantes válidas y precios actuales. |

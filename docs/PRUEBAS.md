@@ -34,7 +34,7 @@ Se puede definir `CHROME_BIN` para usar un ejecutable Chromium instalado. El tes
 
 Núcleo: decimales, centavos, fechas/períodos de Lima, variantes obligatorias, claves de carrito, URLs seguras, importaciones válidas/erróneas, descuentos y ofertas vigentes/vencidas.
 
-Navegador: visitante, intento de privilegios desde localStorage y administrador. Anchos de 320, 375, 768, 991, 992, 1280 y 1440 px. Ausencia de scroll horizontal, ancho legible de tarjetas, sidebar bajo 992 px, posición sticky de ambos buscadores y búsqueda limitada al título del producto. También valida el formulario del propietario con celular + contraseña, el alias técnico de Firebase y la versión 1.30.3 en Soporte. Offcanvas móvil y listas de carrito sincronizadas, cantidades, variantes y checkout con UID, precio y stock.
+Navegador: visitante, intento de privilegios desde localStorage y administrador. Anchos de 320, 375, 768, 991, 992, 1280 y 1440 px. Ausencia de scroll horizontal, ancho legible de tarjetas, sidebar bajo 992 px, posición sticky de ambos buscadores y búsqueda limitada al título del producto. También valida el formulario del propietario con celular + contraseña, Phone Authentication con reCAPTCHA y contraseña de 6 dígitos y la versión 1.30.3 en Soporte. Offcanvas móvil y listas de carrito sincronizadas, cantidades, variantes y checkout con UID, precio y stock.
 
 Formularios: creación de producto y categoría, bloqueo de borrado de categoría usada, alta/baja de personal por UID, registro de gasto, guardado de horario, apertura/cierre de caja y montos negativos. Pedidos: completar, rechazar, repetir rechazo, reabrir y eliminar pendiente, comprobando stock.
 

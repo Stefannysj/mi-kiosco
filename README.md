@@ -1,30 +1,35 @@
-# Backend opcional
+# Mi Kiosco
 
-Funciones Node.js para notificaciones, estadísticas, PDF y compatibilidad con imágenes del repositorio. No es necesario para operar el flujo básico de la web en Spark y no se publica mediante `firebase deploy`.
+PWA para vender productos, recibir pedidos y administrar una tienda desde computadora, tablet o celular.
 
-## Configuración
+| Tienda | Administración | Uso diario |
+| --- | --- | --- |
+| Buscador fijo por **título del producto**, catálogo y carrito. | Pedidos, productos, caja, gastos, personal y apariencia. | Excel, PDF, recibos y reportes. |
 
-Usa únicamente `../.env` en desarrollo. En Vercel configura las variables privadas equivalentes en el panel del proyecto; no crees otro archivo `.env` ni subas una cuenta de servicio al repositorio. La cuenta de servicio debe pertenecer al proyecto correcto y tener solo los permisos necesarios.
+## Acceso
+
+El cliente entra con nombre y teléfono de contacto. El propietario entra con **número de celular + contraseña**.
+
+Para mantener Firebase Spark sin SMS reales, el propietario usa **Firebase Phone Authentication** con un número configurado en **Números de teléfono para la prueba** y su código fijo de 6 dígitos. La pantalla lo presenta como **celular + contraseña** y la verificación web mantiene reCAPTCHA habilitado.
+
+En Firebase Authentication activa **Teléfono** y **Anónimo**. Configura el número de prueba y su código de 6 dígitos; después conserva su UID en `config/admin.uids` o el número E.164 en `config/admin.phones`. No se guarda ninguna contraseña en Firestore.
+
+## Configuración y publicación
+
+El proyecto usa **un solo `.env` en la raíz**. No lo subas a GitHub. Desde la raíz:
 
 ```bash
 npm ci
-npm run check
-npm run dev
+npm run build
+npm run verify
+npm test
+firebase deploy --project mi-kiosco-c7313
 ```
 
-En el proveedor, la carpeta raíz es `kiosco-api`. Tras configurar y validar el servicio, actualiza `PUBLIC_API_URL` en el `.env` raíz y ejecuta `npm run build` desde la raíz. El despliegue remoto del backend es independiente.
+El buscador del cliente, del administrador y de la app móvil filtra únicamente por el título del producto. La barra se mantiene visible al desplazarse en la web.
 
-## Rutas y acceso
+## Soporte
 
-| Ruta | Requisito |
-| --- | --- |
-| `POST /api/notify` | Token Firebase y propiedad del pedido; control de reintentos. |
-| `POST /api/whatsapp` | Token, pedido propio y número autorizado expresamente en configuración privada. |
-| `GET /api/stats` | Administrador reconocido. |
-| `POST /api/boleta` | Administrador; genera representación PDF y correlativo. |
-| `GET /api/boleta` | Enlace con token de recibo público habilitado. |
-| `POST /api/media` | Administrador; compatibilidad con almacenamiento local/GitHub. |
+En el panel administrativo abre **Soporte** para ver los datos de contacto del desarrollador.
 
-Se reconocen claims administrativos, `ADMIN_UIDS` o la configuración autorizada de `config/admin`. La autorización no depende del rol guardado por el navegador.
-
-No se ejecutaron aquí el servidor real, sus credenciales ni las llamadas externas. Este directorio conserva rutas opcionales, no una promesa de backend comercial gratuito. Revisa condiciones y cuotas del proveedor. Los PDF son informativos: no incorporan certificación tributaria ni envío a SUNAT.
+**Versión del sistema: 1.30.3**

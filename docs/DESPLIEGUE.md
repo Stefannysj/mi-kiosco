@@ -8,17 +8,12 @@ El `.env` de la raíz es la única fuente local. `npm run build` genera `web/js/
 
 ## Acceso en Spark
 
-1. En Firebase Authentication activa Anónimo y Correo/contraseña. El formulario visible del panel usa celular + contraseña; Correo/contraseña se usa solo como proveedor técnico de Firebase.
-2. Copia su UID y agrégalo al arreglo `uids` del documento `config/admin`. Conserva campos existentes como `phones` y `fcmTokens`. Un rol escrito en localStorage no concede permisos.
-3. Autoriza `mi-kiosco-c7313.web.app` y el dominio adicional que utilices. Para propietario o personal, crea primero su cuenta técnica y registra su UID y permisos.
+1. En Firebase Authentication activa **Anónimo** y **Teléfono**. No es necesario habilitar Correo/contraseña para este flujo.
+2. En **Teléfono > Números de teléfono para la prueba**, registra el número destinado a pruebas y un código fijo de 6 dígitos. Firebase no envía SMS para esos números.
+3. Conserva el UID de ese usuario en `config/admin.uids` o su teléfono E.164 (`+51...`) en `config/admin.phones`. Un rol escrito en localStorage no concede permisos.
+4. Autoriza `mi-kiosco-c7313.web.app` y cualquier dominio adicional utilizado por la tienda. La web usa `RecaptchaVerifier` antes de confirmar el código.
 
-Ejemplo del campo que se agrega, sin reemplazar el documento completo:
-
-```json
-{ "uids": ["UID_REAL_DEL_ADMINISTRADOR"] }
-```
-
-El panel no usa SMS. Para un celular peruano `9XXXXXXXX`, crea en Firebase Authentication una cuenta Email/Password con el correo técnico `phone.519XXXXXXXX@mi-kiosco-c7313.firebaseapp.com` y la contraseña elegida. Luego autoriza su UID en `config/admin` o `config/staff`. Los clientes usan identidad anónima más nombre/teléfono de contacto.
+La interfaz del propietario muestra **celular + contraseña**. Técnicamente, esa contraseña es el código de verificación fijo del número de prueba. No se almacena en Firestore ni en `.env`. Para cuentas reales fuera del mecanismo de números de prueba, Firebase Phone Authentication utiliza verificación telefónica/SMS y se deben revisar los límites y la facturación vigentes.
 
 ## Historial e inventario existentes
 

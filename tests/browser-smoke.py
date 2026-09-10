@@ -83,8 +83,7 @@ with sync_playwright() as p:
                 check(f'buscador sticky {role}',sticky=='sticky',sticky)
                 if role=='guest':
                     check('login propietario usa celular y contrasena', page.locator('#adminPhonePasswordForm').count()==1 and page.locator('#adminEmail').count()==0 and page.locator('#adminCode').count()==0)
-                    alias=page.evaluate("Auth.phoneCredentialEmail('914491874')")
-                    check('celular genera alias tecnico estable', alias=='phone.51914491874@mi-kiosco-c7313.firebaseapp.com', alias)
+                    check('login propietario conserva recaptcha', page.locator('#adminRecaptchaContainer').count()==1)
                     page.fill('#searchInput','catalogo');page.dispatch_event('#searchInput','input');page.wait_for_timeout(350)
                     check('busqueda cliente ignora descripcion', page.locator('#productsGrid .prod-card').count()==0)
                     page.fill('#searchInput','Producto 03');page.dispatch_event('#searchInput','input');page.wait_for_timeout(350)
@@ -217,6 +216,14 @@ with sync_playwright() as p:
         except Exception as e:
             check('ejecucion '+role,False,str(e))
         context.close()
+    # Dedicated authentication smoke check. Kept separate from guest/admin lifecycle checks so logout races do not pollute their console assertions.
+    context,page,errors,warnings=mount(browser,'guest')
+    try:
+        phone_auth=page.evaluate("async()=>{const u=await Auth.signInPhonePassword('999999999','123456','adminRecaptchaContainer');return {uid:u.uid,phone:u.phoneNumber};}")
+        check('login propietario usa Phone Authentication', phone_auth['phone']=='+51999999999', phone_auth)
+    except Exception as e:
+        check('login propietario usa Phone Authentication',False,str(e))
+    context.close()
     browser.close()
 summary={'environment':'Offline Chromium + real DOM/canvas + Bootstrap 5.3.6 test assets. Firebase, XLSX and jsPDF are doubles. No production or security-rule execution.','passed':sum(x['passed'] for x in results),'failed':sum(not x['passed'] for x in results),'tests':results}
 (OUT/'browser.json').write_text(json.dumps(summary,ensure_ascii=False,indent=2)+'\n')

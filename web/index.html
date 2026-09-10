@@ -447,8 +447,9 @@
               <div class="mb-3">
                 <label for="adminPassword" class="form-label fw-semibold">Contraseña</label>
                 <input id="adminPassword" type="password" class="form-control" autocomplete="current-password"
-                  maxlength="256" required />
+                  inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required />
               </div>
+              <div id="adminRecaptchaContainer" aria-hidden="true"></div>
               <button id="adminPhonePasswordSubmit" class="btn btn-primary w-100" type="submit">
                 <i class="bi bi-shield-lock me-2"></i>Ingresar al panel
               </button>

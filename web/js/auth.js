@@ -1,10 +1,10 @@
 'use strict';
-// Clients use Firebase anonymous identity. Administrative access is authorized by Firebase UID.
-// Firebase has no native phone+password provider, so the UI maps the phone to an internal email alias
-// and authenticates it with Firebase Email/Password. The alias is never shown to the user.
+// Clients use Firebase anonymous identity. Administrative access uses Firebase Phone Authentication.
+// For Spark deployments without SMS, the visible "contrasena" is the 6-digit verification code
+// configured for a Firebase test phone number. reCAPTCHA remains enabled in production.
 const Auth = (() => {
   const K = { name: 'kk_name', phone: 'kk_phone', role: 'kk_role' };
-  let anonymousPromise = null, administrativeUid = '';
+  let recaptcha = null, anonymousPromise = null, administrativeUid = '';
   const read = key => { try { return localStorage.getItem(key) || ''; } catch { return ''; } };
   const write = (key, value) => { try { value == null ? localStorage.removeItem(key) : localStorage.setItem(key, value); } catch { /* private browser */ } };
 
@@ -14,16 +14,13 @@ const Auth = (() => {
     return national;
   }
 
-  function phoneCredentialEmail(value) {
-    const national = normalizePeruvianPhone(value);
-    const projectId = String(window.FIREBASE_CONFIG?.projectId || 'mi-kiosco-c7313')
-      .trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
-    if (!projectId) throw new Error('La configuracion de Firebase no es valida.');
-    return `phone.51${national}@${projectId}.firebaseapp.com`;
+  function e164Phone(value) {
+    return `${String(window.APP_CONFIG?.phoneCountry || '+51').trim() || '+51'}${normalizePeruvianPhone(value)}`;
   }
 
   function phoneFromCredentialUser(user) {
     if (user?.phoneNumber) return String(user.phoneNumber);
+    // Compatibility with accounts created by the short-lived Email/Password migration.
     const match = String(user?.email || '').toLowerCase().match(/^phone\.51(9\d{8})@/);
     return match ? `+51${match[1]}` : '';
   }
@@ -35,24 +32,45 @@ const Auth = (() => {
     return Array.isArray(data.phones) ? data.phones : data.phone ? [data.phone] : [];
   }
 
-  async function signInPhonePassword(phone, password) {
-    if (!window.auth) throw new Error('El servicio de acceso no esta disponible.');
-    const secret = String(password || '');
-    if (!secret) throw new Error('Ingresa tu numero de celular y contrasena.');
-    const credentialEmail = phoneCredentialEmail(phone);
+  function resetRecaptcha() {
+    try { recaptcha?.clear(); } catch { /* widget may already have been removed */ }
+    recaptcha = null;
+    const container = document.getElementById('adminRecaptchaContainer');
+    if (container) container.replaceChildren();
+  }
+
+  async function signInPhonePassword(phone, password, containerId = 'adminRecaptchaContainer') {
+    if (!window.auth || !window.firebase?.auth?.RecaptchaVerifier) throw new Error('El servicio de acceso no esta disponible.');
+    const phoneNumber = e164Phone(phone);
+    const secret = String(password || '').replace(/\D/g, '');
+    if (!/^\d{6}$/.test(secret)) throw new Error('La contrasena debe tener 6 digitos.');
+
+    resetRecaptcha();
     try {
-      return (await auth.signInWithEmailAndPassword(credentialEmail, secret)).user;
+      recaptcha = new firebase.auth.RecaptchaVerifier(containerId, {
+        size: 'invisible',
+        'expired-callback': resetRecaptcha
+      });
+      const confirmation = await auth.signInWithPhoneNumber(phoneNumber, recaptcha);
+      const result = await confirmation.confirm(secret);
+      resetRecaptcha();
+      return result.user;
     } catch (error) {
+      resetRecaptcha();
       const messages = {
-        'auth/invalid-credential': 'Numero de celular o contrasena incorrectos.',
-        'auth/user-not-found': 'Numero de celular o contrasena incorrectos.',
-        'auth/wrong-password': 'Numero de celular o contrasena incorrectos.',
-        'auth/invalid-email': 'No se pudo validar el numero de celular.',
-        'auth/too-many-requests': 'Espera unos minutos antes de volver a intentar.',
-        'auth/operation-not-allowed': 'Activa Correo/contrasena en Firebase Authentication para habilitar este acceso.',
+        'auth/invalid-verification-code': 'Numero de celular o contrasena incorrectos.',
+        'auth/code-expired': 'La contrasena temporal vencio. Intenta nuevamente.',
+        'auth/session-expired': 'La sesion de verificacion vencio. Intenta nuevamente.',
+        'auth/captcha-check-failed': 'No se pudo validar reCAPTCHA. Recarga la pagina e intenta nuevamente.',
+        'auth/missing-app-credential': 'No se pudo validar reCAPTCHA. Recarga la pagina e intenta nuevamente.',
+        'auth/unauthorized-domain': 'Autoriza este dominio en Firebase Authentication.',
+        'auth/too-many-requests': 'Demasiados intentos. Espera unos minutos antes de volver a intentar.',
+        'auth/operation-not-allowed': 'Activa el proveedor Telefono en Firebase Authentication.',
+        'auth/billing-not-enabled': 'Este acceso en Spark requiere un numero configurado como numero de prueba en Firebase Authentication.',
+        'auth/quota-exceeded': 'Este acceso en Spark requiere un numero configurado como numero de prueba en Firebase Authentication.',
         'auth/network-request-failed': 'Revisa tu conexion a Internet.'
       };
-      throw new Error(messages[error.code] || 'No se pudo iniciar sesion. Revisa los datos de acceso.');
+      throw new Error(messages[error?.code] || 'No se pudo iniciar sesion. Revisa el celular, la contrasena y reCAPTCHA.');
     }
   }
 
@@ -64,8 +82,8 @@ const Auth = (() => {
       const snapshot = await db.collection(COLL.config).doc('admin').get();
       const data = snapshot.exists ? snapshot.data() : {};
       const userPhone = phoneFromCredentialUser(user);
-      return (Array.isArray(data.uids) && data.uids.includes(user.uid)) ||
-        Boolean(user.phoneNumber && userPhone && (Array.isArray(data.phones) ? data.phones : [data.phone]).includes(userPhone));
+      const phones = Array.isArray(data.phones) ? data.phones : data.phone ? [data.phone] : [];
+      return (Array.isArray(data.uids) && data.uids.includes(user.uid)) || Boolean(userPhone && phones.includes(userPhone));
     } catch (error) {
       if (error.code === 'permission-denied') return false;
       throw error;
@@ -105,6 +123,7 @@ const Auth = (() => {
 
   async function logout() {
     administrativeUid = '';
+    resetRecaptcha();
     Object.values(K).forEach(key => write(key, null));
     for (const module of [window.Admin, window.Dashboard, window.Orders]) module?.destroy?.();
     window.dispatchEvent(new CustomEvent('auth:logout'));
@@ -121,7 +140,6 @@ const Auth = (() => {
   return {
     loadAdminPhones,
     signInPhonePassword,
-    phoneCredentialEmail,
     phoneFromCredentialUser,
     checkIsAdmin,
     checkMainAdmin: checkIsAdmin,

@@ -323,8 +323,8 @@ function initAuthModal() {
       AppDom.byId('adminPhone')?.focus();
       return;
     }
-    if (!password) {
-      showToast('Ingresa tu contrasena', 'warning');
+    if (!/^\d{6}$/.test(password)) {
+      showToast('La contraseña debe tener 6 dígitos', 'warning');
       AppDom.byId('adminPassword')?.focus();
       return;
     }
@@ -332,7 +332,7 @@ function initAuthModal() {
 
     setBusy(button, true, 'Ingresando...', '<i class="bi bi-shield-lock me-2"></i>Ingresar al panel');
     try {
-      const user = await Auth.signInPhonePassword(phone, password);
+      const user = await Auth.signInPhonePassword(phone, password, 'adminRecaptchaContainer');
       const allowed = await Auth.checkIsAdmin(user);
       Auth.setAdministrativeAccess(user, allowed);
       if (!allowed) {
