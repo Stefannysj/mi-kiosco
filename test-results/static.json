@@ -1,9 +1,7 @@
 {
-  "checks": 225,
+  "checks": 232,
   "jsSyntax": 56,
   "jsxSyntax": 10,
   "json": 13,
-  "failures": [
-    "Debe existir exactamente un .env, en la raiz."
-  ]
+  "failures": []
 }

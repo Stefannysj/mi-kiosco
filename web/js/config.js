@@ -19,7 +19,7 @@ window.KIOSCO_UPGRADE_CONFIG = Object.freeze({
   "firebaseVapidKey": "",
   "enableCallMeBot": false,
   "storeUrl": "https://mi-kiosco-c7313.web.app",
-  "adminAuthMode": "email",
+  "adminAuthMode": "phone-password",
   "imageStorage": "product-inline-base64",
-  "systemVersion": "1.27.3"
+  "systemVersion": "1.30.3"
 });

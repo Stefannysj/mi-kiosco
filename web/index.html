@@ -72,7 +72,7 @@
           <h2 id="currentCatTitle">Todos los productos</h2>
           <div class="search-wrap">
             <i class="bi bi-search text-muted"></i>
-            <input type="search" id="searchInput" aria-label="Buscar productos" placeholder="Buscar productos…" autocomplete="off" />
+            <input type="search" id="searchInput" aria-label="Buscar por título del producto" placeholder="Buscar por título del producto…" autocomplete="off" />
           </div>
         </div>
         <div class="row row-cols-2 row-cols-sm-2 row-cols-md-3 row-cols-xl-4 g-3" id="productsGrid">
@@ -435,45 +435,25 @@
             </form>
           </div>
           <div id="panelAdmin" style="display:none">
-            <form id="adminEmailForm" class="mb-3">
-              <div class="mb-3"><label for="adminEmail" class="form-label fw-semibold">Correo del administrador</label>
-                <input id="adminEmail" type="email" class="form-control" autocomplete="username" maxlength="254" required></div>
-              <div class="mb-3"><label for="adminPassword" class="form-label fw-semibold">Contraseña</label>
-                <input id="adminPassword" type="password" class="form-control" autocomplete="current-password" maxlength="256" required></div>
-              <button id="adminEmailSubmit" class="btn btn-primary w-100" type="submit">Ingresar al panel</button>
-              <p class="form-text mt-2 mb-0">Solo para cuentas autorizadas por el propietario.</p>
-            </form>
-            <div id="adminPhoneAccess" hidden>
-            <div id="step1Admin">
+            <form id="adminPhonePasswordForm" class="mb-3">
               <div class="mb-3">
-                <label class="form-label fw-semibold">Número de teléfono</label>
+                <label for="adminPhone" class="form-label fw-semibold">Número de celular</label>
                 <div class="input-group">
                   <span class="input-group-text"><i class="bi bi-telephone me-1"></i>+51</span>
-                  <input type="tel" class="form-control" id="adminPhone" placeholder="9XX XXX XXX" maxlength="9" />
+                  <input id="adminPhone" type="tel" class="form-control" placeholder="9XX XXX XXX" maxlength="9"
+                    inputmode="numeric" autocomplete="username" required />
                 </div>
               </div>
-              <div id="recaptchaContainer"></div>
-              <button class="btn btn-primary w-100" id="sendCodeBtn">
-                <i class="bi bi-send me-2"></i>Enviar código
-              </button>
-            </div>
-            <div id="step2Admin" style="display:none">
-              <p class="text-muted small mb-3"><i class="bi bi-info-circle me-1"></i>Código enviado a tu número</p>
               <div class="mb-3">
-                <label class="form-label fw-semibold">Código de verificación</label>
-                <input type="text" class="form-control form-control-lg text-center fw-bold" id="adminCode"
-                  placeholder="000000" maxlength="6" inputmode="numeric" autocomplete="one-time-code" />
+                <label for="adminPassword" class="form-label fw-semibold">Contraseña</label>
+                <input id="adminPassword" type="password" class="form-control" autocomplete="current-password"
+                  maxlength="256" required />
               </div>
-              <div class="d-flex gap-2">
-                <button class="btn btn-outline-secondary flex-shrink-0" id="backToStep1">
-                  <i class="bi bi-arrow-left"></i>
-                </button>
-                <button class="btn btn-primary flex-grow-1" id="verifyCodeBtn">
-                  <i class="bi bi-shield-check me-2"></i>Verificar
-                </button>
-              </div>
-            </div>
-          </div>
+              <button id="adminPhonePasswordSubmit" class="btn btn-primary w-100" type="submit">
+                <i class="bi bi-shield-lock me-2"></i>Ingresar al panel
+              </button>
+              <p class="form-text mt-2 mb-0">Acceso exclusivo para el propietario y personal autorizado.</p>
+            </form>
           </div>
         </div>
       </div>

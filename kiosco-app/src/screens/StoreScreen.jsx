@@ -31,8 +31,7 @@ export default function StoreScreen({ products, loading, error, quantities, cart
   const filtered = useMemo(() => {
     const term = search.trim().toLocaleLowerCase('es');
     if (!term) return products;
-    return products.filter(product => [product.name, product.description]
-      .some(value => String(value || '').toLocaleLowerCase('es').includes(term)));
+    return products.filter(product => String(product.name || '').toLocaleLowerCase('es').includes(term));
   }, [products, search]);
 
   return (
@@ -63,7 +62,7 @@ export default function StoreScreen({ products, loading, error, quantities, cart
         <TextInput
           value={search}
           onChangeText={setSearch}
-          placeholder="Buscar productos…"
+          placeholder="Buscar por título del producto…"
           placeholderTextColor={theme.muted}
           style={styles.search}
           returnKeyType="search"

@@ -7519,7 +7519,7 @@ const I18n = (() => {
     section.id = 'kkStaffPermissions';
     section.className = 'mt-3';
     document.getElementById('staffPhone')?.removeAttribute('required');
-    section.innerHTML = `<div class="mb-3"><label class="form-label" for="kkStaffUid">UID de Firebase (para acceso por correo)</label><input class="form-control" id="kkStaffUid" maxlength="128" autocomplete="off"><div class="form-text">Crea la cuenta en Firebase Authentication y copia su UID. El telefono es opcional con UID.</div></div><h6 class="mb-2"><i class="bi bi-shield-check me-2"></i>Permisos de acceso</h6><div class="kk-permissions-grid">
+    section.innerHTML = `<div class="mb-3"><label class="form-label" for="kkStaffUid">UID de Firebase (para acceso por celular y contraseña)</label><input class="form-control" id="kkStaffUid" maxlength="128" autocomplete="off"><div class="form-text">Crea su acceso en Firebase Authentication y copia su UID. El celular identifica al usuario en el panel.</div></div><h6 class="mb-2"><i class="bi bi-shield-check me-2"></i>Permisos de acceso</h6><div class="kk-permissions-grid">
       ${permissionGroup('General', [['dashboard','Dashboard (ver)'],['orders','Pedidos (ver y gestionar)'],['cash','Caja (ver y operar)'],['expenses','Gastos (ver y registrar)'],['schedule','Horario (ver y editar)'],['staff','Personal (ver)'],['audit','Auditoría (ver)'],['appearance','Apariencia (ver y editar)']])}
       ${permissionGroup('Productos', [['products.view','Ver'],['products.create','Crear'],['products.edit','Editar'],['products.delete','Eliminar']])}
       ${permissionGroup('Categorías', [['categories.view','Ver'],['categories.create','Crear'],['categories.edit','Editar'],['categories.delete','Eliminar']])}
@@ -8137,7 +8137,7 @@ const I18n = (() => {
   }
 
   function init() {
-    console.info('[Kiosco] imagenes Base64 inline + mantenimiento | 1.27.3');
+    console.info('[Kiosco] imagenes Base64 inline + mantenimiento | 1.30.3');
     hardenUrlPrivacy();
     initSplash();
     initLocalPreferences();
@@ -8171,7 +8171,7 @@ const I18n = (() => {
   }
 
   window.KIOSCO_SYSTEM_STORAGE = 'product-inline-base64';
-  window.KIOSCO_SYSTEM_BUILD = '1.27.3';
+  window.KIOSCO_SYSTEM_BUILD = '1.30.3';
   patchAuthAccess();
 
   window.KioscoSystem = Object.freeze({
@@ -8197,7 +8197,7 @@ const I18n = (() => {
 'use strict';
 
 (() => {
-  const VERSION = '1.27.3';
+  const VERSION = '1.30.3';
   const LOW_STOCK_LIMIT = 5;
   const JS_QR_CDN = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js';
   const JSPDF_CDN = 'https://unpkg.com/jspdf@4.2.1/dist/jspdf.umd.min.js';
@@ -8330,7 +8330,7 @@ const I18n = (() => {
             <div class="col-12 col-lg">
               <div class="input-group input-group-sm">
                 <span class="input-group-text"><i class="bi bi-search"></i></span>
-                <input id="kkAdminProductSearch" type="search" class="form-control" placeholder="Buscar por nombre, descripcion o categoria" autocomplete="off">
+                <input id="kkAdminProductSearch" type="search" class="form-control" placeholder="Buscar por título del producto" autocomplete="off">
                 <button type="button" class="btn btn-outline-secondary" id="kkClearProductSearch" title="Limpiar busqueda"><i class="bi bi-x-lg"></i></button>
               </div>
             </div>
@@ -8379,8 +8379,8 @@ const I18n = (() => {
         visible += 1;
         return;
       }
-      const haystack = normalize(`${product.name || ''} ${product.description || ''} ${categoryName(product.categoryId)} ${categoryName(product.subcategoryId)}`);
-      const matchesSearch = !state.search || haystack.includes(state.search);
+      const productTitle = normalize(product.name || '');
+      const matchesSearch = !state.search || productTitle.includes(state.search);
       const stock = stockValue(product);
       const matchesStock = state.stockFilter === 'all'
         || (state.stockFilter === 'low' && isLowStock(product))
@@ -8828,7 +8828,7 @@ const I18n = (() => {
               <a class="btn btn-outline-danger" href="mailto:JPSALASJIMENEZ@GMAIL.COM"><i class="bi bi-envelope-fill me-2"></i>Gmail: JPSALASJIMENEZ@GMAIL.COM</a>
               <a class="btn btn-outline-success" href="https://wa.me/51914491874" target="_blank" rel="noopener noreferrer"><i class="bi bi-whatsapp me-2"></i>WhatsApp: +51 914491874</a>
             </div>
-            <div class="kk-version-pill"><i class="bi bi-box-seam me-2"></i>Version del sistema <strong>${VERSION}</strong></div>
+            <div class="kk-version-pill"><i class="bi bi-box-seam me-2"></i>Versión <strong>${VERSION}</strong></div>
           </div>
         </div>`;
       content.append(section);
@@ -8924,6 +8924,7 @@ const I18n = (() => {
     removeEasyReading();
     dedupeSplash();
     bindGlobalEvents();
+    mountSupport();
     initObserver();
     scheduleMount();
     console.info(`[Kiosco] mantenimiento y optimizacion ${VERSION}`);

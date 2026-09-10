@@ -45,6 +45,17 @@ const firebase = JSON.parse(fs.readFileSync(path.join(root, 'firebase.json')));
 check(firebase.hosting.public === 'web', 'Hosting debe publicar solo web/.');
 check(!firebase.storage, 'El deploy Spark no debe intentar desplegar Storage.');
 const html = fs.readFileSync(path.join(root, 'web/index.html'), 'utf8');
+const authSource = fs.readFileSync(path.join(root, 'web/js/auth.js'), 'utf8');
+const storeSource = fs.readFileSync(path.join(root, 'web/js/store.js'), 'utf8');
+const featuresSource = fs.readFileSync(path.join(root, 'web/js/features.js'), 'utf8');
+const mobileStoreSource = fs.readFileSync(path.join(root, 'kiosco-app/src/screens/StoreScreen.jsx'), 'utf8');
+check(html.includes('id=\"adminPhonePasswordForm\"') && html.includes('id=\"adminPhone\"') && html.includes('id=\"adminPassword\"'), 'El acceso admin debe pedir celular y contrasena.');
+check(!html.includes('id=\"adminEmail\"') && !html.includes('recaptchaContainer') && !html.includes('adminCode'), 'El acceso admin no debe mostrar correo ni OTP/SMS.');
+check(authSource.includes('signInPhonePassword') && authSource.includes('phone.51'), 'Auth debe mapear celular+contrasena al alias tecnico de Firebase.');
+check(/function productMatchesSearch\(product\)[\s\S]*?normalizeSearch\(product\.name \|\| ''\)\.includes\(searchQuery\)/.test(storeSource), 'La busqueda cliente debe usar solo el titulo del producto.');
+check(featuresSource.includes("const productTitle = normalize(product.name || '');") && !featuresSource.includes('Buscar por nombre, descripcion o categoria'), 'La busqueda admin debe usar solo el titulo del producto.');
+check(mobileStoreSource.includes("String(product.name || '').toLocaleLowerCase('es').includes(term)") && !mobileStoreSource.includes('[product.name, product.description]'), 'La busqueda movil debe usar solo el titulo del producto.');
+check(featuresSource.includes("const VERSION = '1.30.3'") && featuresSource.includes("KIOSCO_SYSTEM_BUILD = '1.30.3'"), 'Soporte debe mostrar la version 1.30.3.');
 for (const match of html.matchAll(/(?:src|href)="((?:js|css|icons|docs)\/[^"?#]+)[^"]*"/g)) check(fs.existsSync(path.join(root,'web',match[1])), `Recurso local faltante: ${match[1]}`);
 for (const relative of ['web/js/config.js','kiosco-app/src/config.generated.js']) {
   const source = fs.readFileSync(path.join(root,relative),'utf8');

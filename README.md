@@ -1,26 +1,30 @@
-# App móvil - Expo
+# Backend opcional
 
-Cliente React Native para la misma tienda. Incluye búsqueda, carrito con variantes, pedidos y seguimiento por identidad Firebase.
+Funciones Node.js para notificaciones, estadísticas, PDF y compatibilidad con imágenes del repositorio. No es necesario para operar el flujo básico de la web en Spark y no se publica mediante `firebase deploy`.
 
-## Preparar
+## Configuración
 
-No crees otro `.env`. Desde la raíz del repositorio ejecuta `npm run build`; la app recibe solo configuración pública y el núcleo compartido generado.
+Usa únicamente `../.env` en desarrollo. En Vercel configura las variables privadas equivalentes en el panel del proyecto; no crees otro archivo `.env` ni subas una cuenta de servicio al repositorio. La cuenta de servicio debe pertenecer al proyecto correcto y tener solo los permisos necesarios.
 
 ```bash
-cd kiosco-app
 npm ci
-npm run doctor
-npm start
+npm run check
+npm run dev
 ```
 
-Utiliza un dispositivo o emulador compatible con el SDK Expo declarado. `prestart` regenera la configuración desde el único `.env` raíz.
+En el proveedor, la carpeta raíz es `kiosco-api`. Tras configurar y validar el servicio, actualiza `PUBLIC_API_URL` en el `.env` raíz y ejecuta `npm run build` desde la raíz. El despliegue remoto del backend es independiente.
 
-## Firebase
+## Rutas y acceso
 
-Activa el proveedor Anónimo y publica las reglas revisadas. El nombre y teléfono son datos de contacto; el historial se consulta por UID, no por coincidencia de nombre. La identidad se conserva en AsyncStorage, pero no migra automáticamente entre dispositivos.
+| Ruta | Requisito |
+| --- | --- |
+| `POST /api/notify` | Token Firebase y propiedad del pedido; control de reintentos. |
+| `POST /api/whatsapp` | Token, pedido propio y número autorizado expresamente en configuración privada. |
+| `GET /api/stats` | Administrador reconocido. |
+| `POST /api/boleta` | Administrador; genera representación PDF y correlativo. |
+| `GET /api/boleta` | Enlace con token de recibo público habilitado. |
+| `POST /api/media` | Administrador; compatibilidad con almacenamiento local/GitHub. |
 
-Los pedidos releen precios, ofertas y stock en una transacción y registran reservas. Las notificaciones del backend son opcionales y usan token Firebase; dejar `PUBLIC_API_URL` vacío evita depender de Vercel. Un error al guardar el comprobante después de crear el pedido se informa sin duplicar la compra.
+Se reconocen claims administrativos, `ADMIN_UIDS` o la configuración autorizada de `config/admin`. La autorización no depende del rol guardado por el navegador.
 
-## Validación pendiente
-
-Se revisaron archivos e imports y se validó la sintaxis JSX; no se instaló ni compiló Expo en esta entrega. Ejecuta `expo-doctor`, prueba Android/iOS, selector de imágenes, compartir PDF y persistencia antes de distribuirla. Firebase Hosting no compila ni publica esta app.
+No se ejecutaron aquí el servidor real, sus credenciales ni las llamadas externas. Este directorio conserva rutas opcionales, no una promesa de backend comercial gratuito. Revisa condiciones y cuotas del proveedor. Los PDF son informativos: no incorporan certificación tributaria ni envío a SUNAT.

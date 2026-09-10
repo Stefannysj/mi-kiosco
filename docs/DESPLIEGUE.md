@@ -8,9 +8,9 @@ El `.env` de la raíz es la única fuente local. `npm run build` genera `web/js/
 
 ## Acceso en Spark
 
-1. En Firebase Authentication activa Anónimo y Correo/contraseña. Crea manualmente la cuenta administrativa, sin poner su contraseña en `.env`.
+1. En Firebase Authentication activa Anónimo y Correo/contraseña. El formulario visible del panel usa celular + contraseña; Correo/contraseña se usa solo como proveedor técnico de Firebase.
 2. Copia su UID y agrégalo al arreglo `uids` del documento `config/admin`. Conserva campos existentes como `phones` y `fcmTokens`. Un rol escrito en localStorage no concede permisos.
-3. Autoriza `mi-kiosco-c7313.web.app` y el dominio adicional que utilices. Para personal por correo, crea primero la cuenta en Authentication y registra su UID y permisos en Personal.
+3. Autoriza `mi-kiosco-c7313.web.app` y el dominio adicional que utilices. Para propietario o personal, crea primero su cuenta técnica y registra su UID y permisos.
 
 Ejemplo del campo que se agrega, sin reemplazar el documento completo:
 
@@ -18,7 +18,7 @@ Ejemplo del campo que se agrega, sin reemplazar el documento completo:
 { "uids": ["UID_REAL_DEL_ADMINISTRADOR"] }
 ```
 
-El proveedor por teléfono se conserva como opción en `PUBLIC_ADMIN_AUTH_MODE=phone`; requiere la configuración correspondiente del proveedor y, para SMS reales, Blaze. No se activa automáticamente. Los clientes usan identidad anónima persistida por Firebase, más nombre/teléfono de contacto. No hay verificación del titular del número.
+El panel no usa SMS. Para un celular peruano `9XXXXXXXX`, crea en Firebase Authentication una cuenta Email/Password con el correo técnico `phone.519XXXXXXXX@mi-kiosco-c7313.firebaseapp.com` y la contraseña elegida. Luego autoriza su UID en `config/admin` o `config/staff`. Los clientes usan identidad anónima más nombre/teléfono de contacto.
 
 ## Historial e inventario existentes
 

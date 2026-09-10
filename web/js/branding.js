@@ -61,7 +61,7 @@ const LegacyBranding = (() => {
             Object.assign(currentTheme, changes);
             applyTheme(currentTheme);
             try {
-                const adminPhone = window.auth?.currentUser?.phoneNumber || 'admin';
+                const adminPhone = window.Auth?.phoneFromCredentialUser?.(window.auth?.currentUser) || 'admin';
                 const changed = Object.keys(changes).filter(k => before[k] !== changes[k]);
                 if (changed.length) {
                     await db.collection('audit_log').add({

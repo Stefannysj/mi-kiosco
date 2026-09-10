@@ -1,6 +1,6 @@
 {
   "name": "mi-kiosco",
-  "version": "1.27.3",
+  "version": "1.30.3",
   "private": true,
   "type": "module",
   "scripts": {

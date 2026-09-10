@@ -312,91 +312,42 @@ function initAuthModal() {
     showToast(`Hola, ${name}`, 'success');
   });
 
-  const usePhone = window.KIOSCO_UPGRADE_CONFIG?.adminAuthMode === 'phone';
-  if (AppDom.byId('adminEmailForm')) AppDom.byId('adminEmailForm').hidden = usePhone;
-  if (AppDom.byId('adminPhoneAccess')) AppDom.byId('adminPhoneAccess').hidden = !usePhone;
-  AppDom.bind(AppDom.byId('adminEmailForm'), 'submit', async event => {
+  AppDom.bind(AppDom.byId('adminPhonePasswordForm'), 'submit', async event => {
     event.preventDefault();
-    const button = AppDom.byId('adminEmailSubmit');
-    if (button.disabled) return;
-    setBusy(button, true, 'Ingresando...', 'Ingresar al panel');
-    try {
-      const user = await Auth.signInEmail(AppDom.byId('adminEmail').value, AppDom.byId('adminPassword').value);
-      const allowed = await Auth.checkIsAdmin(user);
-      Auth.setAdministrativeAccess(user, allowed);
-      if (!allowed) { await Auth.logout(); throw new Error('Esta cuenta no tiene acceso al panel.'); }
-      AppDom.byId('adminPassword').value = '';
-      AppDom.modal('authModal')?.hide();
-      App.showPage('admin');
-      showToast('Sesion administrativa iniciada', 'success');
-    } catch (error) { showToast(error.message, 'danger'); }
-    finally { setBusy(button, false, '', 'Ingresar al panel'); }
-  });
-
-  AppDom.bind(AppDom.byId('sendCodeBtn'), 'click', async () => {
     const phone = sanitizePhone(AppDom.byId('adminPhone')?.value);
-    const button = AppDom.byId('sendCodeBtn');
+    const password = String(AppDom.byId('adminPassword')?.value || '');
+    const button = AppDom.byId('adminPhonePasswordSubmit');
 
-    if (phone.length !== 9) {
-      showToast('Ingresa un número válido de 9 dígitos', 'warning');
+    if (!/^9\d{8}$/.test(phone)) {
+      showToast('Ingresa un numero de celular valido de 9 digitos', 'warning');
       AppDom.byId('adminPhone')?.focus();
       return;
     }
-
-    setBusy(button, true, 'Enviando…', '<i class="bi bi-send me-2"></i>Enviar código');
-    try {
-      await Auth.sendCode(phone, 'recaptchaContainer');
-      if (AppDom.byId('step1Admin')) AppDom.byId('step1Admin').style.display = 'none';
-      if (AppDom.byId('step2Admin')) AppDom.byId('step2Admin').style.display = 'block';
-      AppDom.byId('adminCode')?.focus();
-      showToast('Código enviado', 'info');
-    } catch (error) {
-      console.error('No se pudo enviar el código:', error);
-      showToast(error?.message || 'No se pudo enviar el código', 'danger');
-    } finally {
-      setBusy(button, false, '', '<i class="bi bi-send me-2"></i>Enviar código');
-    }
-  });
-
-  AppDom.bind(AppDom.byId('verifyCodeBtn'), 'click', async () => {
-    const code = String(AppDom.byId('adminCode')?.value || '').replace(/\D/g, '');
-    const button = AppDom.byId('verifyCodeBtn');
-
-    if (code.length !== 6) {
-      showToast('Ingresa el código de 6 dígitos', 'warning');
-      AppDom.byId('adminCode')?.focus();
+    if (!password) {
+      showToast('Ingresa tu contrasena', 'warning');
+      AppDom.byId('adminPassword')?.focus();
       return;
     }
+    if (button?.disabled) return;
 
-    setBusy(button, true, 'Verificando…', '<i class="bi bi-shield-check me-2"></i>Verificar');
+    setBusy(button, true, 'Ingresando...', '<i class="bi bi-shield-lock me-2"></i>Ingresar al panel');
     try {
-      const user = await Auth.verifyCode(code);
-      const isAdmin = await Auth.checkIsAdmin(user);
-        if (auth.currentUser?.uid !== user.uid) return;
-        Auth.setAdministrativeAccess(user, isAdmin);
-
-      if (!isAdmin) {
+      const user = await Auth.signInPhonePassword(phone, password);
+      const allowed = await Auth.checkIsAdmin(user);
+      Auth.setAdministrativeAccess(user, allowed);
+      if (!allowed) {
         await Auth.logout();
-        showToast('Este número no tiene permisos de administrador', 'danger');
-        return;
+        throw new Error('Este numero no tiene acceso al panel.');
       }
-
-      localStorage.setItem('kk_role', 'admin');
+      if (AppDom.byId('adminPassword')) AppDom.byId('adminPassword').value = '';
       AppDom.modal('authModal')?.hide();
       App.showPage('admin');
-      showToast('Sesión de administrador iniciada', 'success');
+      showToast('Sesion administrativa iniciada', 'success');
     } catch (error) {
-      console.error('No se pudo verificar el código:', error);
-      showToast('Código incorrecto o vencido', 'danger');
+      showToast(error?.message || 'No se pudo iniciar sesion', 'danger');
     } finally {
-      setBusy(button, false, '', '<i class="bi bi-shield-check me-2"></i>Verificar');
+      setBusy(button, false, '', '<i class="bi bi-shield-lock me-2"></i>Ingresar al panel');
     }
-  });
-
-  AppDom.bind(AppDom.byId('backToStep1'), 'click', () => {
-    if (AppDom.byId('step1Admin')) AppDom.byId('step1Admin').style.display = 'block';
-    if (AppDom.byId('step2Admin')) AppDom.byId('step2Admin').style.display = 'none';
-    if (AppDom.byId('adminCode')) AppDom.byId('adminCode').value = '';
   });
 
   ['logoutAdminBtn', 'logoutAdminBtn2', 'logoutAdminMobileBtn'].forEach(id => {

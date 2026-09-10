@@ -1,4 +1,4 @@
-# Revisión técnica - 1.27.3
+# Revisión técnica - 1.30.3
 
 Base: ZIP `mi-kiosco-main(1).zip` proporcionado por el usuario. Trabajo realizado en una copia local. No se escribió en Firebase, GitHub, Vercel ni en la base de producción.
 
@@ -9,7 +9,7 @@ Base: ZIP `mi-kiosco-main(1).zip` proporcionado por el usuario. Trabajo realizad
 | Configuración | Un `.env` raíz, generador con lista pública permitida, comandos de verificación reales y predeploy. |
 | Sintaxis | Validación de todos los JS propios y separación de JSX; referencias locales verificadas. |
 | Consultas | Sin `.orderBy()` en código productivo; ordenamiento local y filtros de periodo en horario de Lima. |
-| Acceso | UID/claims/telefonía verificada para privilegios; cliente anónimo; opción administrativa por correo para Spark; limpieza de suscripciones al salir. |
+| Acceso | UID/claims/telefonía verificada para privilegios; cliente anónimo; acceso administrativo visible por celular + contraseña mediante alias técnico Email/Password compatible con Spark; limpieza de suscripciones al salir. |
 | Permisos | Pedidos por propietario, configuraciones privadas, UID del personal y revocación de acceso; proyecciones públicas de recibos sin datos de contacto. |
 | Carrito | Líneas independientes por variante, stock compartido, redondeo en centavos, persistencia y renderizado desktop/offcanvas coherentes. |
 | Precios | Descuento sobre el precio base y adicionales de variante separados; oferta vigente sin sobreprecio; checkout relee productos y oferta. Repetir pedido usa variantes válidas y precios actuales. |
@@ -29,7 +29,7 @@ Base: ZIP `mi-kiosco-main(1).zip` proporcionado por el usuario. Trabajo realizad
 
 ## Decisiones y límites
 
-**Spark.** La entrega no habilita Blaze. Por defecto no usa Storage ni SMS reales; conserva sus rutas opcionales. No se promete gratuidad ilimitada: las cuotas de Firebase y las condiciones de servicios externos siguen aplicando. Vercel no es necesario para el flujo básico entregado.
+**Spark.** La entrega no habilita Blaze. Por defecto no usa Storage ni SMS reales; el acceso administrativo no envía códigos. No se promete gratuidad ilimitada: las cuotas de Firebase y las condiciones de servicios externos siguen aplicando. Vercel no es necesario para el flujo básico entregado.
 
 **Clientes y pedidos antiguos.** El contacto no equivale a identidad verificada por teléfono. Los pedidos anteriores sin `ownerId` no se reasignan por coincidencia de nombres. Se conserva su acceso administrativo. La sesión anónima no ofrece historial entre dispositivos.
 

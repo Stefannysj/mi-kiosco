@@ -411,15 +411,7 @@ const Store = (() => {
 
   function productMatchesSearch(product) {
     if (!searchQuery) return true;
-
-    const searchable = normalizeSearch([
-      product.name,
-      product.description,
-      getCategoryName(product.categoryId),
-      getCategoryName(product.subcategoryId)
-    ].filter(Boolean).join(' '));
-
-    return searchable.includes(searchQuery);
+    return normalizeSearch(product.name || '').includes(searchQuery);
   }
 
   function getVisibleProducts() {
