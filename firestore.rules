@@ -21,11 +21,11 @@ service cloud.firestore {
     function staffPermissions() {
       return get(/databases/$(database)/documents/config/staff).data.get('permissionsByUid', {}).get(request.auth.uid,
         get(/databases/$(database)/documents/config/staff).data.get('permissionsByPhone', {}).get(phone(), {
-        'dashboard': true, 'orders': true, 'cash': true, 'expenses': true,
-        'schedule': false, 'staff': false, 'audit': false, 'appearance': false,
-        'products': {'view': true, 'create': false, 'edit': false, 'delete': false},
-        'categories': {'view': true, 'create': false, 'edit': false, 'delete': false}
-      }));
+          'dashboard': true, 'orders': true, 'cash': true, 'expenses': true,
+          'schedule': false, 'staff': false, 'audit': false, 'appearance': false,
+          'products': {'view': true, 'create': false, 'edit': false, 'delete': false},
+          'categories': {'view': true, 'create': false, 'edit': false, 'delete': false}
+        }));
     }
     function can(section) { return isAdmin() || (isStaff() && staffPermissions().get(section, false) == true); }
     function canEdit(section, action) {
@@ -33,7 +33,6 @@ service cloud.firestore {
     }
     function adminOrStaff() { return isAdmin() || isStaff(); }
     function ownsOrder(data) { return signedIn() && data.get('ownerId', '') == request.auth.uid; }
-    function canReadOrders() { return isAdmin() || (isStaff() && (can('orders') || can('dashboard') || can('cash'))); }
     function publicConfig(id) { return !(id in ['admin', 'staff', 'media']); }
     function mayWriteConfig(id) {
       return isAdmin() || (publicConfig(id) && (
@@ -42,9 +41,9 @@ service cloud.firestore {
         (id in ['theme', 'branding', 'payments', 'offer', 'featured', 'maintenance'] && can('appearance'))
       ));
     }
-    function validOrder() {
-      let o = request.resource.data;
-      return ownsOrder(o) && o.keys().hasOnly([
+    // Validate only the stock-reserving transaction. Direct order creates remain public as requested.
+    function validReservationOrder(o) {
+      return o.keys().hasOnly([
         'ownerId', 'customer', 'customerPhone', 'items', 'productQuantities', 'total', 'itemCount', 'status',
         'paymentMethod', 'paymentGroup', 'paymentProofExpected', 'notes', 'deliveryType', 'deliveryAddress',
         'scheduledDate', 'scheduledTime', 'location', 'source', 'createdAt', 'updatedAt'
@@ -59,7 +58,7 @@ service cloud.firestore {
     function linkedStockDecrease(productId) {
       let next = request.resource.data;
       let orderPath = /databases/$(database)/documents/orders/$(next.lastOrderId);
-      return signedIn() && resource.data.get('active', true) != false
+      return resource.data.get('active', true) != false
         && next.diff(resource.data).affectedKeys().hasOnly(['stock', 'lastOrderId', 'stockReservations', 'updatedAt'])
         && resource.data.stock is int && next.stock is int && next.stock >= 0 && next.stock < resource.data.stock
         && next.lastOrderId is string && next.lastOrderId.size() > 5 && next.lastOrderId.size() <= 128
@@ -68,8 +67,9 @@ service cloud.firestore {
         && !(next.lastOrderId in resource.data.get('stockReservations', {}))
         && next.stockReservations.get(next.lastOrderId, 0) == resource.data.stock - next.stock
         && next.updatedAt == request.time && !exists(orderPath) && existsAfter(orderPath)
-        && ownsOrder(getAfter(orderPath).data) && getAfter(orderPath).data.status == 'pending'
-        && getAfter(orderPath).data.productQuantities.get(productId, 0) == resource.data.stock - next.stock;
+        && validReservationOrder(getAfter(orderPath).data)
+        && getAfter(orderPath).data.productQuantities.get(productId, 0) == resource.data.stock - next.stock
+        && getAfter(orderPath).data.productQuantities.get(productId, 0) <= 999;
     }
     function orderInventoryTransition(productId) {
       let next = request.resource.data;
@@ -110,11 +110,11 @@ service cloud.firestore {
       allow update: if canEdit('categories', 'edit');
       allow delete: if canEdit('categories', 'delete');
     }
-    match /orders/{orderId} {
-      allow create: if validOrder();
-      allow read: if canReadOrders() || ownsOrder(resource.data);
-      allow update: if can('orders');
-      allow delete: if isAdmin();
+    // Deliberately public: exposes orders and does NOT restrict writes to administrators.
+    match /orders/{id} {
+      allow create: if true;
+      allow read: if true;
+      allow update, delete: if request.auth != null;
     }
     match /expenses/{id} { allow read: if can('expenses') || can('cash'); allow write: if can('expenses'); }
     match /blocked_clients/{id} {
@@ -143,16 +143,23 @@ service cloud.firestore {
     }
     match /chats/{chatId} {
       function chatOwner() { return signedIn() && chatId == request.auth.uid; }
-      allow get: if can('orders') || chatOwner();
+      // A separate random 128-bit conversation link; it is never stored in public orders.
+      // Anyone who obtains this link can access the conversation. Listing chats stays private.
+      function localConversation() { return chatId.matches('chat-[a-f0-9]{32}'); }
+      function localChatData() {
+        return request.resource.data.ownerId == chatId
+          && request.resource.data.keys().hasOnly(['ownerId', 'lastMessage', 'lastSender', 'updatedAt', 'unreadAdmin'])
+          && request.resource.data.lastMessage is string && request.resource.data.lastMessage.size() <= 2000
+          && request.resource.data.lastSender == 'customer' && request.resource.data.updatedAt == request.time;
+      }
+      allow get: if can('orders') || chatOwner() || localConversation();
       allow list: if can('orders');
-      allow create, update: if can('orders') || (chatOwner() && request.resource.data.ownerId == request.auth.uid
-        && request.resource.data.keys().hasOnly(['ownerId', 'lastMessage', 'lastSender', 'updatedAt', 'unreadAdmin'])
-        && request.resource.data.lastMessage is string && request.resource.data.lastMessage.size() <= 2000
-        && request.resource.data.lastSender == 'customer');
+      allow create, update: if can('orders') || ((chatOwner() || localConversation()) && localChatData());
       allow delete: if isAdmin();
       match /messages/{messageId} {
-        allow read: if can('orders') || chatOwner();
-        allow create: if can('orders') || (chatOwner() && request.resource.data.keys().hasOnly(['text', 'sender', 'createdAt'])
+        allow read: if can('orders') || chatOwner() || localConversation();
+        allow create: if can('orders') || ((chatOwner() || localConversation())
+          && request.resource.data.keys().hasOnly(['text', 'sender', 'createdAt'])
           && request.resource.data.text is string && request.resource.data.text.size() > 0
           && request.resource.data.text.size() <= 2000 && request.resource.data.sender == 'customer'
           && request.resource.data.createdAt == request.time);
@@ -166,8 +173,9 @@ service cloud.firestore {
     }
     match /paymentProofs/{orderId} {
       function linkedOrder() { return get(/databases/$(database)/documents/orders/$(orderId)).data; }
-      allow create: if (can('orders') || (ownsOrder(linkedOrder()) && linkedOrder().paymentProofExpected == true
-        && linkedOrder().paymentMethod == request.resource.data.paymentMethod))
+      // Customer can attach once to a pending order; existing files cannot be overwritten publicly.
+      allow create: if (can('orders') || (linkedOrder().paymentProofExpected == true
+        && linkedOrder().status == 'pending' && linkedOrder().paymentMethod == request.resource.data.paymentMethod))
         && request.resource.data.keys().hasOnly(['orderId', 'paymentMethod', 'imageData', 'fileName', 'contentType', 'originalType', 'encodedLength', 'createdAt'])
         && request.resource.data.orderId == orderId && request.resource.data.paymentMethod in ['card', 'yape', 'plin']
         && request.resource.data.imageData is string && request.resource.data.imageData.matches('data:image/.*')
@@ -177,7 +185,6 @@ service cloud.firestore {
       allow read: if can('orders') || ownsOrder(linkedOrder());
       allow update, delete: if can('orders');
     }
-    // Only explicit, non-enumerable, sanitized receipt projections are public.
     match /public_receipts/{token} {
       allow get: if can('orders') || (resource.data.billing.public == true && resource.data.status != 'rejected');
       allow list: if can('orders');

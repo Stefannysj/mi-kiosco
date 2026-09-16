@@ -9,6 +9,8 @@
       "firebase.json",
       "**/.*",
       "**/node_modules/**",
+      "**/*.bak",
+      "**/*.original",
       "kiosco-api/**",
       "kiosco-app/**",
       "scripts/**",
@@ -20,7 +22,8 @@
       "CHECKSUMS.sha256",
       "firestore.rules",
       "firestore.indexes.json",
-      "storage.rules"
+      "storage.rules",
+      "**/*.local-client-tmp"
     ],
     "rewrites": [
       {
@@ -80,8 +83,8 @@
       }
     ],
     "predeploy": [
-      "node scripts/build-config.mjs",
-      "node scripts/verify-package.mjs"
+      "node scripts/prepare-local-client.cjs",
+      "node scripts/verify-local-client.cjs"
     ]
   }
 }

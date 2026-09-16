@@ -1,17 +1,6 @@
-import {
-  collection,
-  doc,
-  getDoc,
-  onSnapshot,
-  query,
-  runTransaction,
-  serverTimestamp,
-  setDoc,
-  where
-} from 'firebase/firestore';
-import { db, ensureClient } from './firebase';
+import { collection, doc, getDoc, onSnapshot, query, runTransaction, serverTimestamp, setDoc, where } from 'firebase/firestore';
+import { db } from './firebase';
 import Core from '../core.generated';
-import { publicConfig } from '../config.generated';
 
 export function subscribeProducts(onData, onError) {
   let products = [], timer = null, loaded = false;
@@ -32,36 +21,28 @@ export function subscribeProducts(onData, onError) {
   }, onError);
   return () => { clearTimeout(timer); stopOffer(); stopProducts(); };
 }
-
 export function subscribeCustomerOrders(customer, phone, onData, onError) {
-  let disposed = false;
-  let unsubscribe = null;
-  ensureClient().then(user => {
-    if (disposed) return;
-    const ordersQuery = query(collection(db, 'orders'), where('ownerId', '==', user.uid));
-    unsubscribe = onSnapshot(ordersQuery, snapshot => {
-      const orders = snapshot.docs.map(item => ({ id: item.id, ...item.data() }))
-        .sort((a, b) => timestampMillis(b.createdAt) - timestampMillis(a.createdAt));
-      onData(orders);
-    }, onError);
-  }).catch(error => { if (!disposed) onError?.(error); });
-  return () => { disposed = true; unsubscribe?.(); };
+  const name = String(customer || '').trim(), digits = String(phone || '').replace(/\D/g, '');
+  if (!name) { onData([]); return () => {}; }
+  // Name/phone are unverified contact data, not authorization credentials.
+  const ordersQuery = query(collection(db, 'orders'), where(digits ? 'customerPhone' : 'customer', '==', digits || name));
+  return onSnapshot(ordersQuery, snapshot => {
+    const orders = snapshot.docs.map(item => ({ id: item.id, ...item.data() }))
+      .sort((a, b) => timestampMillis(b.createdAt) - timestampMillis(a.createdAt));
+    onData(orders);
+  }, onError);
 }
-
 export async function getPaymentConfig() {
   const snapshot = await getDoc(doc(db, 'config', 'payments'));
   return snapshot.exists() ? snapshot.data() : {};
 }
-
 export async function createOrder({ customer, phone = '', cart, paymentMethod = 'cash', notes = '', paymentProof }) {
-  const name = String(customer || '').trim();
-  const digits = String(phone || '').replace(/\D/g, '');
+  const name = String(customer || '').trim(), digits = String(phone || '').replace(/\D/g, '');
   if (!name || name.length > 120) throw new Error('Ingresa un nombre de hasta 120 caracteres.');
   if (digits && !/^9\d{8}$/.test(digits)) throw new Error('Ingresa un celular peruano de 9 digitos.');
   if (!Array.isArray(cart) || !cart.length || cart.length > 100) throw new Error('El carrito debe tener entre 1 y 100 lineas.');
   if (!['cash', 'card', 'yape', 'plin'].includes(paymentMethod)) throw new Error('Selecciona un medio de pago valido.');
   if (paymentProof && (!/^data:image\/(png|jpe?g|webp);base64,/i.test(paymentProof.imageData || '') || paymentProof.imageData.length > 420000)) throw new Error('La imagen de pago no es valida o es demasiado grande.');
-  const user = await ensureClient();
   const orderReference = doc(collection(db, 'orders'));
   const quantities = {};
   for (const item of cart) {
@@ -76,8 +57,7 @@ export async function createOrder({ customer, phone = '', cart, paymentMethod = 
     const liveOffer = offerSnapshot.exists() ? offerSnapshot.data() : null;
     const products = new Map();
     for (const productId of Object.keys(quantities)) {
-      const reference = doc(db, 'products', productId);
-      const snapshot = await transaction.get(reference);
+      const reference = doc(db, 'products', productId), snapshot = await transaction.get(reference);
       if (!snapshot.exists()) throw new Error('Un producto ya no existe. Actualiza tu carrito.');
       const product = snapshot.data();
       if (product.active === false) throw new Error(`${product.name} no esta disponible.`);
@@ -86,18 +66,17 @@ export async function createOrder({ customer, phone = '', cart, paymentMethod = 
       products.set(productId, { reference, product, stock });
     }
     const items = cart.map(item => {
-      const productId = String(item.productId || item.id).split('::')[0];
-      const { product } = products.get(productId);
+      const productId = String(item.productId || item.id).split('::')[0], { product } = products.get(productId);
       const variants = Array.isArray(item.variantSelections) ? item.variantSelections : [];
       const price = Core.priceFor({ ...product, id: productId }, variants, liveOffer);
-      return { productId, name: `${product.name}${variants.length ? ' - ' + variants.join(' / ') : ''}`,
-        price, qty: item.qty, unit: product.unit || 'Unidad', variants,
-        subtotal: Core.cents(price) * item.qty / 100 };
+      return { productId, name: `${product.name}${variants.length ? ' - ' + variants.join(' / ') : ''}`, price, qty: item.qty,
+        unit: product.unit || 'Unidad', variants, subtotal: Core.cents(price) * item.qty / 100 };
     });
     for (const [productId, { reference, stock, product }] of products) {
-      if (stock !== null) transaction.update(reference, { stock: stock - quantities[productId], lastOrderId: orderReference.id, stockReservations: { ...(product.stockReservations || {}), [orderReference.id]: quantities[productId] }, updatedAt: serverTimestamp() });
+      if (stock !== null) transaction.update(reference, { stock: stock - quantities[productId], lastOrderId: orderReference.id,
+        stockReservations: { ...(product.stockReservations || {}), [orderReference.id]: quantities[productId] }, updatedAt: serverTimestamp() });
     }
-    createdOrder = { ownerId: user.uid, customer: name, customerPhone: digits || null,
+    createdOrder = { customer: name, customerPhone: digits || null,
       items, productQuantities: quantities, total: items.reduce((sum, item) => sum + Core.cents(item.subtotal), 0) / 100,
       itemCount: items.reduce((sum, item) => sum + item.qty, 0), status: 'pending', paymentMethod,
       paymentGroup: ['yape', 'plin'].includes(paymentMethod) ? 'wallet' : paymentMethod,
@@ -106,42 +85,22 @@ export async function createOrder({ customer, phone = '', cart, paymentMethod = 
       source: 'expo', createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
     transaction.set(orderReference, createdOrder);
   });
-
   let proofWarning = '';
   if (paymentProof?.imageData) {
     try {
       await setDoc(doc(db, 'paymentProofs', orderReference.id), {
-        orderId: orderReference.id,
-        paymentMethod,
-        imageData: paymentProof.imageData,
+        orderId: orderReference.id, paymentMethod, imageData: paymentProof.imageData,
         fileName: String(paymentProof.fileName || 'comprobante.jpg').slice(0, 120),
         contentType: String(paymentProof.contentType || 'image/jpeg').slice(0, 80),
-        encodedLength: Number(paymentProof.encodedLength || paymentProof.imageData.length),
-        createdAt: serverTimestamp()
+        encodedLength: Number(paymentProof.encodedLength || paymentProof.imageData.length), createdAt: serverTimestamp()
       });
     } catch (error) {
       console.warn('Comprobante de pago:', error);
-      proofWarning = 'El pedido se registró, pero la imagen del pago no pudo guardarse.';
+      proofWarning = 'El pedido se registro, pero la imagen del pago no pudo guardarse.';
     }
   }
-
-  void notifyBackend(orderReference.id);
+  // Do not call the protected backend from an unauthenticated customer or fabricate an ID token.
+  // The existing administrative Firestore listener receives newly created orders.
   return { orderId: orderReference.id, proofWarning, order: { ...createdOrder, id: orderReference.id, createdAt: new Date() } };
 }
-
-async function notifyBackend(orderId) {
-  const baseUrl = publicConfig.apiBaseUrl;
-  if (!baseUrl || baseUrl.includes('REEMPLAZAR')) return;
-  try {
-    await fetch(`${baseUrl.replace(/\/$/, '')}/api/notify`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await (await ensureClient()).getIdToken()}` },
-      signal: AbortSignal.timeout(10000),
-      body: JSON.stringify({ orderId })
-    });
-  } catch (error) {
-    console.warn('No se pudo notificar al administrador:', error);
-  }
-}
-
 export function timestampMillis(value) { return Core.timestamp(value); }

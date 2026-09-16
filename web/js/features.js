@@ -69,8 +69,7 @@ const Chat = (() => {
   let unreadCount = 0;
 
   async function getSessionId() {
-    const user = await Auth.ensureClient();
-    sessionId = user.uid;
+    sessionId = Auth.getChatId();
     return sessionId;
   }
 
@@ -193,7 +192,7 @@ const CustomerProfile = (() => {
     list.innerHTML = `<div class="skeleton" style="height:80px;border-radius:8px;margin-bottom:8px"></div>
                       <div class="skeleton" style="height:80px;border-radius:8px"></div>`;
     try {
-      const snap = await db.collection(COLL.orders).where('ownerId', '==', (await Auth.ensureClient()).uid)
+      const snap = await Auth.clientOrdersQuery()
         .get();
       const orders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       if (!orders.length) {
@@ -204,14 +203,14 @@ const CustomerProfile = (() => {
       list.innerHTML = orders.map(o => {
         const date = o.createdAt?.toDate
           ? o.createdAt.toDate().toLocaleString('es-PE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
-        const items = (o.items || []).map(i => `${i.name} ×${i.qty}`).join(', ');
+        const items = (Array.isArray(o.items) ? o.items : []).map(i => `${i.name} ×${i.qty}`).join(', ');
         return `<div class="order-history-item">
           <div class="oh-header">
             <span style="font-weight:700">${date}</span>
-            <span>${icon[o.status] || ''} ${o.status}</span>
+            <span>${icon[o.status] || ''} ${window.esc(o.status || 'pending')}</span>
           </div>
-          <p style="font-size:.82rem;color:var(--text-2);margin:.25rem 0">${items}</p>
-          <p style="font-weight:700;color:var(--accent)">${APP_CONFIG.currency} ${(o.total || 0).toFixed(2)}</p>
+          <p style="font-size:.82rem;color:var(--text-2);margin:.25rem 0">${window.esc(items)}</p>
+          <p style="font-weight:700;color:var(--accent)">${APP_CONFIG.currency} ${Number(o.total || 0).toFixed(2)}</p>
         </div>`;
       }).join('');
     } catch {
@@ -1377,8 +1376,7 @@ const I18n = (() => {
     state.publicUnsubscribe = null;
     const identity = clientIdentity();
     if (!identity.name) return renderPublicReceipts([]);
-    if (!window.auth?.currentUser) return;
-    const query = db.collection(COLL.orders).where('ownerId', '==', auth.currentUser.uid);
+    const query = Auth.clientOrdersQuery();
     state.publicUnsubscribe = query.onSnapshot(snapshot => {
       const orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
         .sort((a, b) => KioscoCore.timestamp(b.createdAt) - KioscoCore.timestamp(a.createdAt));
@@ -1425,7 +1423,7 @@ const I18n = (() => {
     bindIdentityChanges();
     startPublicReceipts();
     auth?.onAuthStateChanged?.(user => {
-      if (user && !user.isAnonymous && document.getElementById('sec-receipts')?.classList.contains('active')) startAdminReceipts();
+      if (user && Auth.hasAdministrativeAccess() && document.getElementById('sec-receipts')?.classList.contains('active')) startAdminReceipts();
     });
     window.KioscoReceiptsAppearance = Object.freeze({
       refreshPublicReceipts: startPublicReceipts,
@@ -5422,7 +5420,7 @@ const I18n = (() => {
   }
 
   async function resolveAdministrativeAccess(user) {
-    if (!user || user.isAnonymous) {
+    if (!user || user.isAnonymous || (Auth.isClient() && !Auth.isAdminLoginPending())) {
       state.access = { mainAdmin: false, member: null, permissions: null };
       state.accessReady = true;
       return false;
@@ -6184,7 +6182,7 @@ const I18n = (() => {
     const section = document.getElementById('kkMaintenance');
     if (!section) return;
     const active = Boolean(state.maintenance?.active);
-    const authenticatedAdmin = Boolean(window.auth?.currentUser && (state.access.mainAdmin || state.access.member));
+    const authenticatedAdmin = Boolean(Auth.hasAdministrativeAccess() && (state.access.mainAdmin || state.access.member));
     const show = active && !authenticatedAdmin;
     document.body.classList.toggle('kk-maintenance-active', show);
     section.classList.toggle('show', show);
@@ -6205,7 +6203,7 @@ const I18n = (() => {
       else state.access = { mainAdmin: false, member: null, permissions: null };
       renderMaintenance();
       applyPermissionsToAdmin();
-      if (user && !user.isAnonymous) startOrderNotifications(); else stopOrderNotifications();
+      if (user && Auth.hasAdministrativeAccess()) startOrderNotifications(); else stopOrderNotifications();
     });
   }
 
@@ -7801,7 +7799,7 @@ const I18n = (() => {
     const name = Auth.getClientName?.() || '';
     if (!name || !window.db) return;
     try {
-      const snapshot = await db.collection(COLL.orders).where('ownerId', '==', (await Auth.ensureClient()).uid).get();
+      const snapshot = await Auth.clientOrdersQuery().get();
       const orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => toDate(b.createdAt) - toDate(a.createdAt)).slice(0, 20);
       window.setTimeout(() => {
         const cards = [...container.querySelectorAll('article.card')];
@@ -8957,3 +8955,5 @@ const I18n = (() => {
   else clear();
   new MutationObserver(clear).observe(document.documentElement, { childList: true, subtree: true });
 })();
+
+// KIOSCO_LOCAL_CLIENT_FIX_20260913_V1

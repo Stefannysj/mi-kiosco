@@ -1,35 +1,33 @@
 # Mi Kiosco
 
-PWA para vender productos, recibir pedidos y administrar una tienda desde computadora, tablet o celular.
+Una tienda digital para explorar productos, preparar pedidos y facilitar la atención de un negocio desde una computadora, una tablet o un celular.
 
-| Tienda | Administración | Uso diario |
-| --- | --- | --- |
-| Buscador fijo por **título del producto**, catálogo y carrito. | Pedidos, productos, caja, gastos, personal y apariencia. | Excel, PDF, recibos y reportes. |
+**Visita la tienda:** https://mi-kiosco-c7313.web.app
 
-## Acceso
+## Comprar de forma sencilla
 
-El cliente entra con nombre y teléfono de contacto. El propietario entra con **número de celular + contraseña**.
+Revisa el catálogo, utiliza el buscador y agrega productos al carrito. Al entrar a la tienda, indica tu nombre y tu teléfono de contacto. No necesitas crear una cuenta, ingresar un correo ni recordar una contraseña.
 
-Para mantener Firebase Spark sin SMS reales, el propietario usa **Firebase Phone Authentication** con un número configurado en **Números de teléfono para la prueba** y su código fijo de 6 dígitos. La pantalla lo presenta como **celular + contraseña** y la verificación web mantiene reCAPTCHA habilitado.
+Tu nombre y teléfono se recuerdan en ese navegador para facilitar tus siguientes pedidos. Estos datos son información de contacto: no verifican tu identidad ni constituyen una cuenta de usuario. Puedes actualizarlos o cerrar tu perfil desde la tienda.
 
-En Firebase Authentication activa **Teléfono** y **Anónimo**. Configura el número de prueba y su código de 6 dígitos; después conserva su UID en `config/admin.uids` o el número E.164 en `config/admin.phones`. No se guarda ninguna contraseña en Firestore.
+Antes de enviar un pedido, revisa los productos, las cantidades, el medio de pago y la modalidad de entrega disponible. La tienda debe confirmar su atención; enviar un pedido no equivale a confirmar un pago.
 
-## Configuración y publicación
+## Herramientas para el negocio
 
-El proyecto usa **un solo `.env` en la raíz**. No lo subas a GitHub. Desde la raíz:
+El panel administrativo reúne la gestión de productos, categorías, pedidos, caja, gastos, reportes y apariencia de la tienda. El acceso administrativo utiliza verificación por teléfono y un código de seis dígitos, separado del ingreso de los clientes.
 
-```bash
-npm ci
-npm run build
-npm run verify
-npm test
-firebase deploy --project mi-kiosco-c7313
-```
+Cuando el navegador lo permite, puedes instalar Mi Kiosco como una aplicación web para abrirla desde tu dispositivo. Se necesita conexión a Internet para enviar pedidos y sincronizar los datos del negocio.
 
-El buscador del cliente, del administrador y de la app móvil filtra únicamente por el título del producto. La barra se mantiene visible al desplazarse en la web.
+## Próximamente: sistema POS
+
+El siguiente objetivo de Mi Kiosco es incorporar un **sistema de punto de venta (POS)** para atender ventas presenciales desde el mismo entorno de trabajo.
+
+La propuesta contempla una pantalla de venta rápida, el registro de cobros y una experiencia integrada de caja e inventario. Esta sección describe la evolución prevista: no anuncia funciones POS terminadas ni una fecha de lanzamiento confirmada.
 
 ## Soporte
 
-En el panel administrativo abre **Soporte** para ver los datos de contacto del desarrollador.
+En el panel administrativo, la sección **Soporte** contiene los datos de contacto del desarrollador.
 
-**Versión del sistema: 1.30.3**
+## Información para quien publica el sistema
+
+Esta corrección conserva la configuración existente de Firebase. Las instrucciones de aplicación, las advertencias sobre las reglas públicas de pedidos y el alcance de las pruebas se encuentran en `APLICAR_CORRECCION.txt`.
